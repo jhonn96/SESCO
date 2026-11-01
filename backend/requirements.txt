@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+pyotp
+python-jose[cryptography]
+passlib[bcrypt]
+# passlib 1.7.4 es incompatible con bcrypt >= 5 (su backend falla al inicializarse)
+bcrypt<5
+pydantic-settings

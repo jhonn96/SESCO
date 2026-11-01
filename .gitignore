@@ -1,0 +1,21 @@
+# Entornos virtuales de Python
+venv/
+.venv/
+env/
+
+# Caché de Python
+__pycache__/
+*.pyc
+
+# Variables de entorno (¡Nunca subas tu .env real!)
+.env
+.env.*
+!.env.example
+
+# Node (para tu frontend React)
+node_modules/
+dist/
+build/
+
+# Base de datos (si no quieres versionar el volcado local)
+*.sql

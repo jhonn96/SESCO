@@ -1,0 +1,112 @@
+import { api } from './api'
+import type { Curso } from './cursos'
+
+/** Conteo de asistencias por estado. Espejo de `ResumenEstados` del backend. */
+export interface ResumenEstados {
+  registros: number
+  presentes: number
+  tardanzas: number
+  faltas: number
+  justificadas: number
+}
+
+/** Conteo de un día de la semana en curso. */
+export interface SerieDia extends ResumenEstados {
+  fecha: string
+}
+
+export interface CursoPanel {
+  curso_id: number
+  nivel: string
+  grado: number
+  paralelo: string
+  turno: string
+  periodo_id: number
+  estudiantes: number
+  hoy: ResumenEstados
+  semana: ResumenEstados
+  inasistencia_pct: number
+  supera_umbral: boolean
+}
+
+/** Respuesta de `GET /api/reportes/panel`. */
+export interface PanelAsistencia {
+  generado_en: string
+  fecha: string
+  semana_inicio: string
+  semana_fin: string
+  umbral_inasistencia_pct: number
+  total_estudiantes: number
+  totales_hoy: ResumenEstados
+  totales_semana: ResumenEstados
+  inasistencia_pct: number
+  serie_semana: SerieDia[]
+  cursos: CursoPanel[]
+}
+
+/**
+ * Panel de asistencia del director.
+ *
+ * El cliente `api` añade el token JWT y llama a `/api/reportes/panel`.
+ * Si no se envía `fecha`, el backend usa la fecha local del colegio.
+ */
+export function obtenerPanel(
+  fecha?: string,
+  signal?: AbortSignal,
+): Promise<PanelAsistencia> {
+  return api.get<PanelAsistencia>('/reportes/panel', {
+    query: { fecha },
+    signal,
+  })
+}
+
+/** Totales de un estudiante en el rango consultado. */
+export interface EstudianteReporte {
+  usuario_id: number
+  apellido_paterno: string
+  apellido_materno: string
+  nombres: string
+  /** Apellidos completos (`Paterno Materno`); se conserva por compatibilidad. */
+  apellidos: string
+  ci: string
+  curso_id: number
+  curso: Curso | null
+  registros: number
+  presentes: number
+  tardanzas: number
+  faltas: number
+  justificadas: number
+  porcentaje_asistencia: number
+}
+
+/** Respuesta de `GET /api/reportes/estudiantes`. */
+export interface ReporteEstudiantes {
+  generado_en: string
+  desde: string
+  hasta: string
+  curso_id: number | null
+  total_estudiantes: number
+  totales: ResumenEstados
+  estudiantes: EstudianteReporte[]
+}
+
+export interface FiltrosReporteEstudiantes {
+  desde: string
+  hasta: string
+  cursoId?: number
+}
+
+/** Reporte por estudiante para un rango de fechas (solo Director). */
+export function obtenerReporteEstudiantes(
+  filtros: FiltrosReporteEstudiantes,
+  signal?: AbortSignal,
+): Promise<ReporteEstudiantes> {
+  return api.get<ReporteEstudiantes>('/reportes/estudiantes', {
+    query: {
+      desde: filtros.desde,
+      hasta: filtros.hasta,
+      curso_id: filtros.cursoId,
+    },
+    signal,
+  })
+}

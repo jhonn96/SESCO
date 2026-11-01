@@ -1,0 +1,270 @@
+import type { ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  CalendarDays,
+  ClipboardList,
+  GraduationCap,
+  LayoutDashboard,
+  LogOut,
+  QrCode,
+  UserPlus,
+} from 'lucide-react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
+
+import { ThemeToggle } from '@/components/ThemeToggle'
+import { Separator } from '@/components/ui/separator'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+  useSidebar,
+} from '@/components/ui/sidebar'
+import { useAuth } from '@/hooks/use-auth'
+import { formatearFechaLarga, hoyIso } from '@/lib/fechas'
+import { ETIQUETA_ROL, nombreRol } from '@/lib/roles'
+
+interface ProfesorShellProps {
+  /** Texto del encabezado, por ejemplo "Panel del profesor". */
+  seccion: string
+  /** Abre el escáner desde el menú lateral. */
+  onEscanear?: () => void
+  /** Abre el registro manual desde el menú lateral. */
+  onRegistroManual?: () => void
+  children: ReactNode
+}
+
+/**
+ * Layout del módulo del profesor: sidebar reducido a sus tareas diarias
+ * (panel, registro de asistencia y atajos) y contenido a todo el ancho.
+ */
+export function ProfesorShell({
+  seccion,
+  onEscanear,
+  onRegistroManual,
+  children,
+}: ProfesorShellProps) {
+  const { usuario, cerrarSesion } = useAuth()
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
+
+  const rol = nombreRol(usuario)
+
+  function manejarCierre() {
+    cerrarSesion()
+    queryClient.clear()
+    toast.success('Sesión cerrada correctamente')
+    navigate('/login', { replace: true })
+  }
+
+  return (
+    <SidebarProvider>
+      <Sidebar collapsible="icon">
+        <SidebarHeader className="border-b border-sidebar-border/70 p-3">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton size="lg" asChild tooltip="SESCO">
+                <Link to="/profesor">
+                  <span className="flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+                    <GraduationCap className="size-5!" aria-hidden="true" />
+                  </span>
+                  <div className="grid flex-1 text-left leading-tight">
+                    <span className="truncate text-base font-semibold tracking-tight">
+                      SESCO
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      Panel del profesor
+                    </span>
+                  </div>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarHeader>
+
+        <SidebarContent>
+          <MenuProfesor
+            onEscanear={onEscanear}
+            onRegistroManual={onRegistroManual}
+          />
+        </SidebarContent>
+
+        <SidebarFooter className="border-t border-sidebar-border/70 p-3">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                size="lg"
+                tooltip="Cerrar sesión"
+                onClick={manejarCierre}
+                aria-label="Cerrar sesión"
+                className="h-auto py-2.5"
+              >
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                  {usuario
+                    ? `${usuario.nombres[0] ?? ''}${usuario.apellidos[0] ?? ''}`.toUpperCase()
+                    : 'PR'}
+                </span>
+                <div className="grid flex-1 text-left leading-tight">
+                  <span className="truncate text-sm font-semibold">
+                    {usuario
+                      ? `${usuario.nombres} ${usuario.apellidos}`.trim()
+                      : 'Usuario'}
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {rol ? ETIQUETA_ROL[rol] : 'Profesor'}
+                  </span>
+                </div>
+                <LogOut
+                  className="ml-auto size-4! shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+
+        <SidebarRail />
+      </Sidebar>
+
+      <SidebarInset>
+        <header
+          data-slot="dashboard-header"
+          className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-border/70 bg-background/80 px-4 backdrop-blur lg:px-8"
+        >
+          <SidebarTrigger size="icon" className="-ml-1" />
+          <Separator orientation="vertical" className="h-6" />
+          <div className="min-w-0">
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              SESCO · Aula
+            </p>
+            <p className="truncate text-base font-semibold">{seccion}</p>
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            <span className="hidden items-center gap-1.5 rounded-full border border-border bg-muted/60 px-3 py-1 text-sm font-medium text-muted-foreground lg:inline-flex">
+              <CalendarDays className="size-4" aria-hidden="true" />
+              {formatearFechaLarga(hoyIso())}
+            </span>
+            <ThemeToggle />
+          </div>
+        </header>
+
+        <div
+          data-slot="dashboard-content"
+          className="flex w-full flex-1 flex-col gap-8 p-4 sm:p-6 lg:p-8"
+        >
+          {children}
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
+  )
+}
+
+interface MenuProfesorProps {
+  onEscanear?: () => void
+  onRegistroManual?: () => void
+}
+
+function MenuProfesor({ onEscanear, onRegistroManual }: MenuProfesorProps) {
+  const { pathname, hash } = useLocation()
+  const { isMobile, setOpenMobile } = useSidebar()
+
+  function cerrarMenuMovil() {
+    if (isMobile) setOpenMobile(false)
+  }
+
+  const enPanel = pathname === '/profesor' && hash !== '#registros'
+  const enRegistros = pathname === '/profesor' && hash === '#registros'
+
+  return (
+    <>
+      <SidebarGroup>
+        <SidebarGroupLabel className="text-sm font-semibold tracking-wide uppercase">
+          Mi jornada
+        </SidebarGroupLabel>
+        <SidebarGroupContent>
+          <SidebarMenu className="gap-1">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={enPanel}
+                tooltip="Panel"
+              >
+                <Link
+                  to="/profesor"
+                  onClick={cerrarMenuMovil}
+                  aria-current={enPanel ? 'page' : undefined}
+                >
+                  <LayoutDashboard aria-hidden="true" />
+                  <span>Panel</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={enRegistros}
+                tooltip="Registros de hoy"
+              >
+                <Link
+                  to="/profesor#registros"
+                  onClick={cerrarMenuMovil}
+                  aria-current={enRegistros ? 'page' : undefined}
+                >
+                  <ClipboardList aria-hidden="true" />
+                  <span>Registros de hoy</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+
+      <SidebarGroup>
+        <SidebarGroupLabel className="text-sm font-semibold tracking-wide uppercase">
+          Registrar asistencia
+        </SidebarGroupLabel>
+        <SidebarGroupContent>
+          <SidebarMenu className="gap-1">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Escanear QR"
+                onClick={() => {
+                  cerrarMenuMovil()
+                  onEscanear?.()
+                }}
+              >
+                <QrCode aria-hidden="true" />
+                <span>Escanear QR</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Registro manual"
+                onClick={() => {
+                  cerrarMenuMovil()
+                  onRegistroManual?.()
+                }}
+              >
+                <UserPlus aria-hidden="true" />
+                <span>Registro manual</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+    </>
+  )
+}
