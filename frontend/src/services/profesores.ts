@@ -129,6 +129,17 @@ export function listarProfesores(
   })
 }
 
+/**
+ * GET /api/profesores/{usuario_id}/horario (solo Director): bloques semanales
+ * de los cursos asignados al profesor indicado, ordenados por día y hora.
+ */
+export function obtenerHorarioProfesor(
+  usuarioId: number,
+  signal?: AbortSignal,
+): Promise<Horario[]> {
+  return api.get<Horario[]>(`/profesores/${usuarioId}/horario`, { signal })
+}
+
 /** POST /api/profesores (solo Director). */
 export function crearProfesor(datos: NuevoProfesor): Promise<Profesor> {
   return api.post<Profesor>('/profesores', datos)

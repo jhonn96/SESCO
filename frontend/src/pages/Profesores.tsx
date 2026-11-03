@@ -7,6 +7,7 @@ import {
   useTable,
 } from '@tanstack/react-table'
 import {
+  CalendarClock,
   GraduationCap,
   Pencil,
   Plus,
@@ -20,6 +21,7 @@ import { DashboardShell } from '@/components/DashboardShell'
 import { EditarProfesorDialog } from '@/components/EditarProfesorDialog'
 import { NuevoProfesorDialog } from '@/components/NuevoProfesorDialog'
 import { PageHeader } from '@/components/PageHeader'
+import { ProfesorHorarioDialog } from '@/components/ProfesorHorarioDialog'
 import { TablaEstado } from '@/components/TablaEstado'
 import { TablaPaginacion } from '@/components/TablaPaginacion'
 import { Badge } from '@/components/ui/badge'
@@ -61,7 +63,10 @@ function estadoProfesor(profesor: Profesor) {
   return { etiqueta: 'Activo', variante: 'success' as const }
 }
 
-const columnas = (onEditar: (profesor: Profesor) => void) =>
+const columnas = (
+  onEditar: (profesor: Profesor) => void,
+  onVerHorario: (profesor: Profesor) => void,
+) =>
   helper.columns([
     helper.display({
       id: 'profesor',
@@ -132,16 +137,28 @@ const columnas = (onEditar: (profesor: Profesor) => void) =>
           nombreCompleto(row.original.usuario) ||
           `Profesor #${row.original.usuario_id}`
         return (
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            aria-label={`Editar a ${nombre}`}
-            title="Editar profesor"
-            onClick={() => onEditar(row.original)}
-          >
-            <Pencil aria-hidden="true" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label={`Ver horario de ${nombre}`}
+              title="Ver horario"
+              onClick={() => onVerHorario(row.original)}
+            >
+              <CalendarClock aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label={`Editar a ${nombre}`}
+              title="Editar profesor"
+              onClick={() => onEditar(row.original)}
+            >
+              <Pencil aria-hidden="true" />
+            </Button>
+          </div>
         )
       },
     }),
@@ -153,6 +170,8 @@ export function Profesores() {
   const [pagina, setPagina] = useState(0)
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
   const [profesorAEditar, setProfesorAEditar] = useState<Profesor | null>(null)
+  const [profesorConHorario, setProfesorConHorario] =
+    useState<Profesor | null>(null)
 
   useEffect(() => {
     const temporizador = window.setTimeout(() => {
@@ -188,7 +207,11 @@ export function Profesores() {
   const sinDatos = profesores.length === 0 && !cargando && !consulta.isError
 
   const columnasTabla = useMemo(
-    () => columnas((profesor) => setProfesorAEditar(profesor)),
+    () =>
+      columnas(
+        (profesor) => setProfesorAEditar(profesor),
+        (profesor) => setProfesorConHorario(profesor),
+      ),
     [],
   )
 
@@ -387,6 +410,17 @@ export function Profesores() {
             if (!abierto) setProfesorAEditar(null)
           }}
           profesor={profesorAEditar}
+        />
+      ) : null}
+
+      {profesorConHorario ? (
+        <ProfesorHorarioDialog
+          key={profesorConHorario.usuario_id}
+          abierto
+          onOpenChange={(abierto) => {
+            if (!abierto) setProfesorConHorario(null)
+          }}
+          profesor={profesorConHorario}
         />
       ) : null}
     </DashboardShell>

@@ -203,6 +203,23 @@ def listar_mis_registros_hoy(
 
 
 @router.get(
+    "/{usuario_id}/horario",
+    response_model=list[HorarioResponse],
+    summary="Horario semanal de un profesor (solo Director)",
+    description=(
+        "Devuelve todos los bloques de la semana de los cursos asignados al "
+        "profesor indicado en ``profesor_curso``. Se usa en la acción rápida "
+        "«Ver Horario» del directorio docente."
+    ),
+)
+def listar_horario_de_profesor(
+    usuario_id: int, db: DbSession, _director: CurrentDirector
+) -> list[Horario]:
+    profesor = profesor_service.obtener(db, usuario_id)
+    return horario_service.bloques_de_profesor(db, profesor.usuario_id)
+
+
+@router.get(
     "/{usuario_id}",
     response_model=ProfesorResponse,
     summary="Obtener un profesor (solo Director)",
