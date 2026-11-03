@@ -317,7 +317,7 @@ export function EstudianteDashboard() {
         </div>
       </header>
 
-      <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-5 px-4 pt-2 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6">
+      <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-5 px-4 pt-2 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6 lg:px-8">
         <div className="space-y-1">
           <p className="text-xs font-medium tracking-wide text-primary uppercase">
             Estudiante
@@ -360,8 +360,8 @@ export function EstudianteDashboard() {
           {/* Mi QR                                                        */}
           {/* ------------------------------------------------------------ */}
           <TabsContent value="qr" className="space-y-6">
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,26rem)_1fr] lg:items-start">
-              <div>
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
+              <div className="lg:col-span-1">
                 {sinClase ? (
                   <TarjetaSinClase />
                 ) : (
@@ -552,7 +552,7 @@ export function EstudianteDashboard() {
                 )}
               </div>
 
-              <div className="space-y-6">
+              <div className="space-y-6 lg:col-span-1">
                 <section aria-labelledby="titulo-resumen" className="space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -571,7 +571,7 @@ export function EstudianteDashboard() {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-3">
                     <TarjetaKpi
                       etiqueta="Días presente"
                       valor={resumen.data?.dias_presente}
@@ -620,7 +620,9 @@ export function EstudianteDashboard() {
                     </div>
                   ) : null}
                 </section>
+              </div>
 
+              <div className="space-y-6 lg:col-span-1">
                 <TarjetaTutor
                   datos={tutor.data}
                   cargando={tutor.isLoading}
@@ -822,7 +824,7 @@ function TarjetaKpi({
   return (
     <div
       className={cn(
-        'flex items-center gap-3 rounded-2xl border bg-card p-4 sm:flex-col sm:items-start sm:gap-2.5',
+        'flex items-center gap-3 rounded-2xl border bg-card p-4',
         estilo.borde,
       )}
     >
@@ -1022,11 +1024,11 @@ function VistaHorario({
       </div>
 
       {cargando ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid w-full grid-cols-1 gap-4 md:grid-cols-2 lg:gap-5 xl:grid-cols-3">
           {Array.from({ length: 3 }).map((_, indice) => (
             <div
               key={indice}
-              className="space-y-3 rounded-2xl border border-border/70 bg-card p-4"
+              className="space-y-3 rounded-2xl border border-border/70 bg-card p-4 sm:p-5"
             >
               <Skeleton className="h-4 w-24" />
               <Skeleton className="h-12 w-full rounded-xl" />
@@ -1056,7 +1058,7 @@ function VistaHorario({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid w-full grid-cols-1 gap-4 md:grid-cols-2 lg:gap-5 xl:grid-cols-3">
           {DIAS_SEMANA.map((dia) => {
             const esHoy = posicion.dia === dia.valor
             const bloquesDia = bloques.filter(
@@ -1068,7 +1070,7 @@ function VistaHorario({
                 key={dia.valor}
                 aria-label={dia.etiqueta}
                 className={cn(
-                  'rounded-2xl border bg-card p-4 shadow-sm',
+                  'rounded-2xl border bg-card p-4 shadow-sm sm:p-5',
                   esHoy
                     ? 'border-primary/40 ring-1 ring-primary/20'
                     : 'border-border/70',
@@ -1185,7 +1187,7 @@ function VistaAsistencias({
   const hayFiltros = Boolean(mes || estado)
 
   return (
-    <section aria-labelledby="titulo-asistencias" className="space-y-3">
+    <section aria-labelledby="titulo-asistencias" className="w-full space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2
@@ -1204,7 +1206,7 @@ function VistaAsistencias({
         </span>
       </div>
 
-      <div className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
+      <div className="w-full rounded-2xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
           <div className="grid gap-1.5">
             <Label htmlFor="filtro-mes">Mes</Label>
@@ -1253,7 +1255,7 @@ function VistaAsistencias({
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
+      <div className="w-full overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
         {cargando ? (
           <div className="space-y-3 p-4" role="status">
             {Array.from({ length: 5 }).map((_, indice) => (
@@ -1312,10 +1314,10 @@ function VistaAsistencias({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="pl-4">Fecha</TableHead>
+                    <TableHead className="pl-6">Fecha</TableHead>
                     <TableHead>Materia</TableHead>
                     <TableHead>Hora de ingreso</TableHead>
-                    <TableHead className="pr-4 text-right">Estado</TableHead>
+                    <TableHead className="pr-6 text-right">Estado</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1389,7 +1391,7 @@ function FilaAsistenciaTabla({
 
   return (
     <TableRow>
-      <TableCell className="pl-4 font-medium">
+      <TableCell className="pl-6 font-medium">
         {formatearFecha(registro.fecha)}
       </TableCell>
       <TableCell className="max-w-[24rem] whitespace-normal">
@@ -1398,7 +1400,7 @@ function FilaAsistenciaTabla({
       <TableCell className="text-muted-foreground tabular-nums">
         {horaIngreso(registro)}
       </TableCell>
-      <TableCell className="pr-4 text-right">
+      <TableCell className="pr-6 text-right">
         <Badge variant={meta.variante}>{meta.etiqueta}</Badge>
       </TableCell>
     </TableRow>
