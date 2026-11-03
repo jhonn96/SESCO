@@ -18,7 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.exceptions import Conflicto, NoEncontrado, ReglaNegocio, traducir_integridad
-from app.models import Curso, Horario, Materia, ProfesorCurso
+from app.models import Asistencia, Curso, Estudiante, Horario, Materia, ProfesorCurso
 from app.schemas.enums import DiaSemana
 from app.schemas.horario import HorarioCreate, HorarioUpdate
 from app.services import qr_service
@@ -78,24 +78,39 @@ def bloque_para_qr(
     return None
 
 
-def bloques_vigentes_de_profesor(
+def bloques_de_profesor(db: Session, profesor_id: int) -> list[Horario]:
+    """Todos los bloques semanales de los cursos asignados al profesor."""
+    cursos = select(ProfesorCurso.curso_id).where(
+        ProfesorCurso.profesor_id == profesor_id
+    )
+    return list(
+        db.scalars(
+            select(Horario)
+            .options(joinedload(Horario.materia), joinedload(Horario.curso))
+            .where(Horario.curso_id.in_(cursos))
+            .order_by(ORDEN_DIAS, Horario.hora_inicio, Horario.curso_id)
+        )
+    )
+
+
+def bloques_hoy_de_profesor(
     db: Session,
     profesor_id: int,
     *,
     momento: datetime | None = None,
 ) -> list[Horario]:
-    """Bloques en curso de los cursos asignados a un profesor.
+    """Bloques del día actual de los cursos asignados a un profesor.
 
-    ``horario`` no guarda el docente: la relación llega por ``profesor_curso``.
-    Se considera vigente el bloque del día actual cuyo rango contiene la hora
-    (intervalo semiabierto ``hora_inicio <= ahora < hora_fin``).
+    Se filtra por ``dia_semana`` de la fecha del colegio: un bloque del lunes
+    no debe aparecer en los registros del martes aunque la tabla de asistencia
+    tenga filas con la fecha actual y ese ``horario_id`` (datos importados o
+    históricos inconsistentes).
     """
     instante = momento or qr_service.ahora_local()
     dia = dia_semana_de(instante)
     if dia is None:
         return []
 
-    hora = instante.timetz().replace(tzinfo=None)
     cursos = select(ProfesorCurso.curso_id).where(
         ProfesorCurso.profesor_id == profesor_id
     )
@@ -106,12 +121,71 @@ def bloques_vigentes_de_profesor(
             .where(
                 Horario.curso_id.in_(cursos),
                 Horario.dia_semana == dia,
-                Horario.hora_inicio <= hora,
-                Horario.hora_fin > hora,
             )
             .order_by(Horario.curso_id, Horario.hora_inicio)
         )
     )
+
+
+def bloques_vigentes_de_profesor(
+    db: Session,
+    profesor_id: int,
+    *,
+    momento: datetime | None = None,
+) -> list[Horario]:
+    """Bloques en curso de los cursos asignados a un profesor.
+
+    ``horario`` no guarda el docente: la relación llega por
+    ``profesor_curso``. Se considera vigente el bloque del día actual cuyo
+    rango contiene la hora (intervalo semiabierto ``hora_inicio <= ahora <
+    hora_fin``).
+    """
+    instante = momento or qr_service.ahora_local()
+    hora = instante.timetz().replace(tzinfo=None)
+    return [
+        horario
+        for horario in bloques_hoy_de_profesor(db, profesor_id, momento=instante)
+        if horario.hora_inicio <= hora < horario.hora_fin
+    ]
+
+
+def clase_actual_de_profesor(
+    db: Session,
+    profesor_id: int,
+    *,
+    momento: datetime | None = None,
+) -> tuple[Horario | None, int, int]:
+    """Bloque en curso del docente y sus contadores de asistencia.
+
+    Devuelve ``(bloque, registrados, total_estudiantes)``. Si el profesor no
+    tiene clase en este instante, ``bloque`` es ``None`` y los contadores 0.
+    """
+    instante = momento or qr_service.ahora_local()
+    bloques = bloques_vigentes_de_profesor(db, profesor_id, momento=instante)
+    if not bloques:
+        return None, 0, 0
+
+    bloque = bloques[0]
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(Estudiante)
+            .where(Estudiante.curso_id == bloque.curso_id)
+        )
+        or 0
+    )
+    registrados = (
+        db.scalar(
+            select(func.count())
+            .select_from(Asistencia)
+            .where(
+                Asistencia.horario_id == bloque.id,
+                Asistencia.fecha == instante.date(),
+            )
+        )
+        or 0
+    )
+    return bloque, registrados, total
 
 
 def _cargar(db: Session, horario_id: int) -> Horario | None:

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Any
 
 from sqlalchemy import func, select
@@ -562,6 +562,7 @@ def cerrar_bloque(
     horario_id: int,
     profesor_id: int,
     fecha: date | None = None,
+    es_profesor: bool = False,
     ip: str | None = None,
 ) -> ResultadoCierre:
     horario = _cargar_horario(db, horario_id)
@@ -570,10 +571,22 @@ def cerrar_bloque(
     if fecha > ahora.date():
         raise ReglaNegocio("No se puede cerrar un bloque en una fecha futura")
 
-    fin = datetime.combine(fecha, horario.hora_fin, tzinfo=ZONA_HORARIA)
-    if fin > ahora:
+    if es_profesor:
+        asignado = db.scalar(
+            select(ProfesorCurso.curso_id).where(
+                ProfesorCurso.profesor_id == profesor_id,
+                ProfesorCurso.curso_id == horario.curso_id,
+            )
+        )
+        if asignado is None:
+            raise Prohibido(
+                "Ese bloque no pertenece a ninguno de los cursos que tienes asignados."
+            )
+
+    inicio = datetime.combine(fecha, horario.hora_inicio, tzinfo=ZONA_HORARIA)
+    if inicio > ahora:
         raise ReglaNegocio(
-            "El bloque aún no ha finalizado; no se puede cerrar la asistencia"
+            "El bloque aún no ha comenzado; no se puede cerrar la asistencia"
         )
 
     estudiantes = list(
@@ -710,3 +723,71 @@ def listar(
 
 def obtener(db: Session, asistencia_id: int) -> Asistencia:
     return _cargar_asistencia(db, asistencia_id)
+
+
+def listar_hoy_de_profesor(
+    db: Session,
+    profesor_id: int,
+    *,
+    curso_id: int | None = None,
+    materia_id: int | None = None,
+) -> list[Asistencia]:
+    """Registros de hoy de todos los cursos asignados al docente.
+
+    La relación docente-curso vive en ``profesor_curso`` (``horario`` no
+    guarda al profesor). Se incluyen solo los bloques de esos cursos que
+    corresponden al día de la semana actual y, si se indican, se acotan por
+    curso o materia.
+
+    Además se deduplica por ``(estudiante, materia, hora de inicio)`` para que
+    un posible ``horario`` repetido no muestre al mismo estudiante dos veces
+    en la misma clase.
+    """
+    ahora = qr_service.ahora_local()
+    fecha = ahora.date()
+    dia = horario_service.dia_semana_de(ahora)
+    if dia is None:
+        return []
+
+    cursos = select(ProfesorCurso.curso_id).where(
+        ProfesorCurso.profesor_id == profesor_id
+    )
+
+    condiciones: list[Any] = [
+        Asistencia.fecha == fecha,
+        Horario.curso_id.in_(cursos),
+        Horario.dia_semana == dia,
+    ]
+    if curso_id is not None:
+        condiciones.append(Horario.curso_id == curso_id)
+    if materia_id is not None:
+        condiciones.append(Horario.materia_id == materia_id)
+
+    items = db.scalars(
+        select(Asistencia)
+        .join(Horario, Horario.id == Asistencia.horario_id)
+        .options(
+            joinedload(Asistencia.estudiante).joinedload(Estudiante.usuario),
+            joinedload(Asistencia.horario).joinedload(Horario.materia),
+            joinedload(Asistencia.horario).joinedload(Horario.curso),
+        )
+        .where(*condiciones)
+        .order_by(
+            Horario.hora_inicio,
+            Asistencia.hora_ingreso,
+            Asistencia.estudiante_id,
+        )
+    )
+
+    unicos: list[Asistencia] = []
+    vistos: set[tuple[int, int, time]] = set()
+    for item in items:
+        horario = item.horario
+        if horario is None:
+            continue
+        clave = (item.estudiante_id, horario.materia_id, horario.hora_inicio)
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        unicos.append(item)
+    return unicos

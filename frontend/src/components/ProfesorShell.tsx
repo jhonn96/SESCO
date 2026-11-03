@@ -42,6 +42,8 @@ interface ProfesorShellProps {
   onEscanear?: () => void
   /** Abre el registro manual desde el menú lateral. */
   onRegistroManual?: () => void
+  /** Habilita las acciones de registro (solo con clase en curso). */
+  puedeRegistrar?: boolean
   children: ReactNode
 }
 
@@ -53,6 +55,7 @@ export function ProfesorShell({
   seccion,
   onEscanear,
   onRegistroManual,
+  puedeRegistrar = true,
   children,
 }: ProfesorShellProps) {
   const { usuario, cerrarSesion } = useAuth()
@@ -97,6 +100,7 @@ export function ProfesorShell({
           <MenuProfesor
             onEscanear={onEscanear}
             onRegistroManual={onRegistroManual}
+            puedeRegistrar={puedeRegistrar}
           />
         </SidebarContent>
 
@@ -174,9 +178,14 @@ export function ProfesorShell({
 interface MenuProfesorProps {
   onEscanear?: () => void
   onRegistroManual?: () => void
+  puedeRegistrar: boolean
 }
 
-function MenuProfesor({ onEscanear, onRegistroManual }: MenuProfesorProps) {
+function MenuProfesor({
+  onEscanear,
+  onRegistroManual,
+  puedeRegistrar,
+}: MenuProfesorProps) {
   const { pathname, hash } = useLocation()
   const { isMobile, setOpenMobile } = useSidebar()
 
@@ -186,6 +195,8 @@ function MenuProfesor({ onEscanear, onRegistroManual }: MenuProfesorProps) {
 
   const enPanel = pathname === '/profesor' && hash !== '#registros'
   const enRegistros = pathname === '/profesor' && hash === '#registros'
+  const enHorario = pathname === '/profesor/horario'
+  const muestraAcciones = Boolean(onEscanear || onRegistroManual)
 
   return (
     <>
@@ -228,43 +239,72 @@ function MenuProfesor({ onEscanear, onRegistroManual }: MenuProfesorProps) {
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
+
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={enHorario}
+                tooltip="Mi horario"
+              >
+                <Link
+                  to="/profesor/horario"
+                  onClick={cerrarMenuMovil}
+                  aria-current={enHorario ? 'page' : undefined}
+                >
+                  <CalendarDays aria-hidden="true" />
+                  <span>Mi horario</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroupContent>
       </SidebarGroup>
 
-      <SidebarGroup>
-        <SidebarGroupLabel className="text-sm font-semibold tracking-wide uppercase">
-          Registrar asistencia
-        </SidebarGroupLabel>
-        <SidebarGroupContent>
-          <SidebarMenu className="gap-1">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                tooltip="Escanear QR"
-                onClick={() => {
-                  cerrarMenuMovil()
-                  onEscanear?.()
-                }}
-              >
-                <QrCode aria-hidden="true" />
-                <span>Escanear QR</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                tooltip="Registro manual"
-                onClick={() => {
-                  cerrarMenuMovil()
-                  onRegistroManual?.()
-                }}
-              >
-                <UserPlus aria-hidden="true" />
-                <span>Registro manual</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
+      {muestraAcciones ? (
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-sm font-semibold tracking-wide uppercase">
+            Registrar asistencia
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu className="gap-1">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip={
+                    puedeRegistrar
+                      ? 'Escanear QR'
+                      : 'No tienes clases en este momento'
+                  }
+                  disabled={!puedeRegistrar}
+                  onClick={() => {
+                    cerrarMenuMovil()
+                    onEscanear?.()
+                  }}
+                >
+                  <QrCode aria-hidden="true" />
+                  <span>Escanear QR</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip={
+                    puedeRegistrar
+                      ? 'Registro manual'
+                      : 'No tienes clases en este momento'
+                  }
+                  disabled={!puedeRegistrar}
+                  onClick={() => {
+                    cerrarMenuMovil()
+                    onRegistroManual?.()
+                  }}
+                >
+                  <UserPlus aria-hidden="true" />
+                  <span>Registro manual</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      ) : null}
     </>
   )
 }

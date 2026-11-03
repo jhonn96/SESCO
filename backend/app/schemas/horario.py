@@ -65,6 +65,27 @@ class HorarioResponse(HorarioBase):
     )
 
 
+class ClaseActualResponse(APIModel):
+    """Bloque que el docente está dictando en este momento.
+
+    ``en_clase`` es ``False`` cuando el profesor no tiene ningún bloque en
+    curso; en ese caso ``bloque`` es ``null`` y los contadores quedan en cero.
+    """
+
+    en_clase: bool = Field(
+        description="True si el docente tiene un bloque en curso ahora"
+    )
+    bloque: HorarioResponse | None = Field(
+        default=None, description="Bloque en curso, con su curso y materia"
+    )
+    registrados: int = Field(
+        default=0, ge=0, description="Asistencias registradas hoy en el bloque"
+    )
+    total_estudiantes: int = Field(
+        default=0, ge=0, description="Estudiantes matriculados en el curso"
+    )
+
+
 # --------------------------------------------------------------------------
 # Horario del estudiante autenticado
 # --------------------------------------------------------------------------

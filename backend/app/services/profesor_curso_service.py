@@ -72,6 +72,18 @@ def listar(
     return items, total
 
 
+def cursos_de_profesor(db: Session, profesor_id: int) -> list[Curso]:
+    """Cursos asignados al profesor en ``profesor_curso``."""
+    return list(
+        db.scalars(
+            select(Curso)
+            .join(ProfesorCurso, ProfesorCurso.curso_id == Curso.id)
+            .where(ProfesorCurso.profesor_id == profesor_id)
+            .order_by(Curso.id)
+        )
+    )
+
+
 def obtener(db: Session, profesor_id: int, curso_id: int) -> ProfesorCurso:
     asignacion = _cargar(db, profesor_id, curso_id)
     if asignacion is None:

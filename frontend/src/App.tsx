@@ -16,6 +16,7 @@ import { Horarios } from '@/pages/Horarios'
 import { Justificaciones } from '@/pages/Justificaciones'
 import { Login } from '@/pages/Login'
 import { ProfesorDashboard } from '@/pages/ProfesorDashboard'
+import { ProfesorHorario } from '@/pages/ProfesorHorario'
 import { Profesores } from '@/pages/Profesores'
 import { Reportes } from '@/pages/Reportes'
 import { TutorAsistencia } from '@/pages/TutorAsistencia'
@@ -58,6 +59,7 @@ export default function App() {
       </Route>
       <Route element={<ProtectedRoute rol="profesor" />}>
         <Route path="/profesor" element={<ProfesorDashboard />} />
+        <Route path="/profesor/horario" element={<ProfesorHorario />} />
       </Route>
       <Route element={<ProtectedRoute rol="estudiante" />}>
         <Route path="/estudiante" element={<EstudianteDashboard />} />

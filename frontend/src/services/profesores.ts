@@ -1,5 +1,8 @@
 import { api, type PeticionPaginada } from './api'
+import type { RegistroAsistencia } from './asistencia'
 import type { Usuario } from './auth'
+import type { Curso } from './cursos'
+import type { Horario } from './horarios'
 
 /** Profesor con su usuario expandido. Espejo de `ProfesorResponse`. */
 export interface Profesor {
@@ -33,6 +36,82 @@ export interface ActualizarProfesor {
   fecha_ingreso?: string
   direccion?: string
   telefono?: string
+}
+
+/** Clase que el docente está dictando en este momento. */
+export interface ClaseActual {
+  en_clase: boolean
+  /** Bloque en curso con curso y materia; `null` si no hay clase. */
+  bloque: Horario | null
+  /** Asistencias registradas hoy para ese bloque. */
+  registrados: number
+  /** Estudiantes matriculados en el curso. */
+  total_estudiantes: number
+}
+
+/**
+ * GET /api/profesores/clase-actual (solo Profesor): bloque que el docente
+ * autenticado tiene en curso según la hora del servidor.
+ */
+export function obtenerClaseActual(
+  signal?: AbortSignal,
+): Promise<ClaseActual> {
+  return api.get<ClaseActual>('/profesores/clase-actual', { signal })
+}
+
+/** Filtros del historial diario del docente. */
+export interface FiltrosMisRegistros {
+  cursoId?: number
+  materiaId?: number
+}
+
+/**
+ * GET /api/profesores/mis-cursos (solo Profesor): todos los cursos asignados
+ * al docente, para el selector de curso del historial diario.
+ */
+export function obtenerMisCursos(signal?: AbortSignal): Promise<Curso[]> {
+  return api.get<Curso[]>('/profesores/mis-cursos', { signal })
+}
+
+/**
+ * GET /api/profesores/mi-horario (solo Profesor): todos los bloques de la
+ * semana de los cursos asignados al docente, ordenados por día y hora.
+ */
+export function obtenerMiHorario(
+  signal?: AbortSignal,
+): Promise<Horario[]> {
+  return api.get<Horario[]>('/profesores/mi-horario', { signal })
+}
+
+/**
+ * GET /api/profesores/bloques-hoy (solo Profesor): bloques del día actual de
+ * los cursos asignados al docente. Es la fuente del selector de materias,
+ * existan o no registros de asistencia.
+ */
+export function obtenerBloquesHoy(
+  signal?: AbortSignal,
+): Promise<Horario[]> {
+  return api.get<Horario[]>('/profesores/bloques-hoy', { signal })
+}
+
+/**
+ * GET /api/profesores/mis-registros-hoy (solo Profesor): todos los registros
+ * del día de los cursos asignados al docente, con curso y materia.
+ */
+export function obtenerMisRegistrosHoy(
+  filtros: FiltrosMisRegistros = {},
+  signal?: AbortSignal,
+): Promise<PeticionPaginada<RegistroAsistencia[]>> {
+  return api.getPaginado<RegistroAsistencia[]>(
+    '/profesores/mis-registros-hoy',
+    {
+      query: {
+        curso_id: filtros.cursoId,
+        materia_id: filtros.materiaId,
+      },
+      signal,
+    },
+  )
 }
 
 /** GET /api/profesores (solo Director). */

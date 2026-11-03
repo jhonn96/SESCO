@@ -10,11 +10,19 @@ from __future__ import annotations
 from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import CurrentDirector, CurrentProfesor, DbSession
-from app.models import Estudiante, Horario, Profesor
+from app.models import Asistencia, Curso, Estudiante, Horario, Profesor
+from app.schemas.asistencia import AsistenciaResponse
+from app.schemas.curso import CursoResponse
 from app.schemas.estudiante import EstudianteResponse
-from app.schemas.horario import HorarioResponse
+from app.schemas.horario import ClaseActualResponse, HorarioResponse
 from app.schemas.profesor import ProfesorCreate, ProfesorResponse, ProfesorUpdate
-from app.services import estudiante_service, horario_service, profesor_service
+from app.services import (
+    asistencia_service,
+    estudiante_service,
+    horario_service,
+    profesor_curso_service,
+    profesor_service,
+)
 
 router = APIRouter()
 
@@ -79,6 +87,38 @@ def listar_mis_estudiantes(
 
 
 @router.get(
+    "/mis-cursos",
+    response_model=list[CursoResponse],
+    summary="Cursos asignados al profesor autenticado (solo Profesor)",
+    description=(
+        "Devuelve todos los cursos del docente autenticado según "
+        "``profesor_curso``, sin importar si tienen clase hoy. Se usa para "
+        "el selector de curso del panel de registros."
+    ),
+)
+def listar_mis_cursos(
+    db: DbSession, profesor: CurrentProfesor
+) -> list[Curso]:
+    return profesor_curso_service.cursos_de_profesor(db, profesor.id)
+
+
+@router.get(
+    "/mi-horario",
+    response_model=list[HorarioResponse],
+    summary="Horario semanal del profesor autenticado (solo Profesor)",
+    description=(
+        "Devuelve todos los bloques de la semana de los cursos asignados al "
+        "docente autenticado, ordenados por día y hora. Se usa en la vista "
+        "«Mi horario»."
+    ),
+)
+def listar_mi_horario(
+    db: DbSession, profesor: CurrentProfesor
+) -> list[Horario]:
+    return horario_service.bloques_de_profesor(db, profesor.id)
+
+
+@router.get(
     "/bloques-vigentes",
     response_model=list[HorarioResponse],
     summary="Bloques de clase en curso (solo Profesor)",
@@ -91,6 +131,75 @@ def listar_bloques_vigentes(
     db: DbSession, profesor: CurrentProfesor
 ) -> list[Horario]:
     return horario_service.bloques_vigentes_de_profesor(db, profesor.id)
+
+
+@router.get(
+    "/bloques-hoy",
+    response_model=list[HorarioResponse],
+    summary="Bloques de hoy del profesor (solo Profesor)",
+    description=(
+        "Devuelve los bloques del día actual (según el día de la semana) de "
+        "los cursos asignados al docente autenticado. Se usa para construir "
+        "los filtros por curso y materia sin depender de que ya existan "
+        "registros de asistencia."
+    ),
+)
+def listar_bloques_hoy(
+    db: DbSession, profesor: CurrentProfesor
+) -> list[Horario]:
+    return horario_service.bloques_hoy_de_profesor(db, profesor.id)
+
+
+@router.get(
+    "/clase-actual",
+    response_model=ClaseActualResponse,
+    summary="Clase que dicta el profesor en este momento (solo Profesor)",
+    description=(
+        "Toma la hora actual del servidor y devuelve el bloque de horario que "
+        "el docente autenticado tiene en curso, con su curso y materia. Si no "
+        "tiene clase, responde ``en_clase=false`` y ``bloque=null``."
+    ),
+)
+def obtener_clase_actual(
+    db: DbSession, profesor: CurrentProfesor
+) -> ClaseActualResponse:
+    bloque, registrados, total = horario_service.clase_actual_de_profesor(
+        db, profesor.id
+    )
+    return ClaseActualResponse(
+        en_clase=bloque is not None,
+        bloque=HorarioResponse.model_validate(bloque) if bloque else None,
+        registrados=registrados,
+        total_estudiantes=total,
+    )
+
+
+@router.get(
+    "/mis-registros-hoy",
+    response_model=list[AsistenciaResponse],
+    summary="Registros de asistencia de hoy de mis cursos (solo Profesor)",
+    description=(
+        "Devuelve todos los registros del día actual de los cursos asignados "
+        "al docente autenticado. Se puede acotar por ``curso_id`` o "
+        "``materia_id``. La relación docente-curso se resuelve con "
+        "``profesor_curso``."
+    ),
+)
+def listar_mis_registros_hoy(
+    db: DbSession,
+    profesor: CurrentProfesor,
+    response: Response,
+    curso_id: int | None = Query(default=None, ge=1),
+    materia_id: int | None = Query(default=None, ge=1),
+) -> list[Asistencia]:
+    items = asistencia_service.listar_hoy_de_profesor(
+        db,
+        profesor.id,
+        curso_id=curso_id,
+        materia_id=materia_id,
+    )
+    response.headers["X-Total-Count"] = str(len(items))
+    return items
 
 
 @router.get(

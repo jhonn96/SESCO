@@ -48,6 +48,7 @@ export interface RegistroAsistenciaCreado extends RegistroAsistencia {
 export interface FiltrosAsistencias {
   fecha: string
   cursoId?: number
+  horarioId?: number
   estado?: EstadoAsistencia
   skip?: number
   limit?: number
@@ -62,6 +63,7 @@ export function listarAsistencias(
     query: {
       fecha: filtros.fecha,
       curso_id: filtros.cursoId,
+      horario_id: filtros.horarioId,
       estado: filtros.estado,
       skip: filtros.skip ?? 0,
       limit: filtros.limit ?? 15,
@@ -97,6 +99,28 @@ export function registrarAsistenciaManual(
   datos: AsistenciaManual,
 ): Promise<RegistroAsistenciaCreado> {
   return api.post<RegistroAsistenciaCreado>('/asistencia/manual', datos)
+}
+
+/** Resultado de cerrar un bloque: ausentes marcados y avisos encolados. */
+export interface CierreBloque {
+  horario_id: number
+  fecha: string
+  faltas_registradas: number
+  notificaciones_encoladas: number
+}
+
+/**
+ * POST /api/asistencia/cerrar-bloque (Director y Profesor): marca como
+ * `falta` a los estudiantes del curso que no tienen registro en el bloque.
+ */
+export function cerrarBloque(
+  horarioId: number,
+  fecha?: string,
+): Promise<CierreBloque> {
+  return api.post<CierreBloque>('/asistencia/cerrar-bloque', {
+    horario_id: horarioId,
+    fecha,
+  })
 }
 
 /** Código TOTP vigente del estudiante autenticado. */

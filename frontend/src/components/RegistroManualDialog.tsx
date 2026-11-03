@@ -66,6 +66,8 @@ const ESTILO_ACTIVO: Record<EstadoManual, string> = {
 export interface RegistroManualDialogProps {
   abierto: boolean
   onCerrar: () => void
+  /** Bloque en curso; acota el registro a esa clase. */
+  horarioId?: number
 }
 
 /**
@@ -75,6 +77,7 @@ export interface RegistroManualDialogProps {
 export function RegistroManualDialog({
   abierto,
   onCerrar,
+  horarioId,
 }: RegistroManualDialogProps) {
   const queryClient = useQueryClient()
 
@@ -128,6 +131,7 @@ export function RegistroManualDialog({
     mutationFn: (estudianteId: number) =>
       registrarAsistenciaManual({
         estudiante_id: estudianteId,
+        horario_id: horarioId,
         estado,
       }),
     onSuccess: (registro) => {

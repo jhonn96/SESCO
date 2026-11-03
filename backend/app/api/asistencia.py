@@ -140,6 +140,7 @@ def cerrar_bloque(
         horario_id=datos.horario_id,
         fecha=datos.fecha,
         profesor_id=usuario.id,
+        es_profesor=usuario.rol.nombre == RolNombre.PROFESOR.value,
         ip=_ip(request),
     )
     return CierreBloqueResponse.model_validate(resultado)

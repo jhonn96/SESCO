@@ -49,13 +49,15 @@ type EstadoCamara = 'iniciando' | 'activa' | 'error'
 export interface QrScannerProps {
   abierto: boolean
   onCerrar: () => void
+  /** Bloque que se está dictando; acota el registro a esa clase. */
+  horarioId?: number
 }
 
 /**
  * Lector de QR con la cámara del dispositivo. Al detectar un código válido
  * registra la asistencia (`POST /api/asistencia/escanear`) y avisa con Sonner.
  */
-export function QrScanner({ abierto, onCerrar }: QrScannerProps) {
+export function QrScanner({ abierto, onCerrar, horarioId }: QrScannerProps) {
   const queryClient = useQueryClient()
   const directorio = useDirectorioEstudiantes()
 
@@ -72,7 +74,7 @@ export function QrScanner({ abierto, onCerrar }: QrScannerProps) {
   const manejarLecturaRef = useRef<(texto: string) => void>(() => {})
 
   const registrar = useMutation({
-    mutationFn: (contenido: string) => escanearAsistencia(contenido),
+    mutationFn: (contenido: string) => escanearAsistencia(contenido, horarioId),
     onMutate: () => {
       procesandoRef.current = true
       setErrorLectura(null)

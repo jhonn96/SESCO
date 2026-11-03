@@ -42,6 +42,11 @@ export function etiquetaCortaCurso(curso: CursoEtiquetable): string {
   return `${curso.grado}° "${curso.paralelo.trim()}"`
 }
 
+/** Ejemplo: `1° A`, sin comillas (para tarjetas compactas). */
+export function etiquetaCompactaCurso(curso: CursoEtiquetable): string {
+  return `${curso.grado}° ${curso.paralelo.trim()}`
+}
+
 /** Ordena por nivel, grado y paralelo para los filtros. */
 export function compararCursos(a: Curso, b: Curso): number {
   return (
