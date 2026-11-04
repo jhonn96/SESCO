@@ -1,10 +1,12 @@
-fastapi
-uvicorn[standard]
-sqlalchemy
-psycopg2-binary
-pyotp
-python-jose[cryptography]
-passlib[bcrypt]
+# SESCO · Backend (probado con Python 3.12)
+# Instalación: python -m venv venv && venv\Scripts\activate && pip install -r requirements.txt
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+sqlalchemy==2.1.6
+psycopg2-binary==2.9.13
+pyotp==2.10.0
+python-jose[cryptography]==3.5.0
+passlib[bcrypt]==1.7.4
 # passlib 1.7.4 es incompatible con bcrypt >= 5 (su backend falla al inicializarse)
-bcrypt<5
-pydantic-settings
+bcrypt==4.3.0
+pydantic-settings==2.16.1
