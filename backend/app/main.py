@@ -22,6 +22,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api import auth as auth_router
 from app.api import alertas as alertas_router
 from app.api import asistencia as asistencia_router
+from app.api import auditoria as auditoria_router
 from app.api import avisos as avisos_router
 from app.api import configuracion as configuracion_router
 from app.api import cursos as cursos_router
@@ -146,6 +147,11 @@ app.include_router(
     alertas_router.router,
     prefix=f"{settings.api_prefix}/alertas",
     tags=["Alertas"],
+)
+app.include_router(
+    auditoria_router.router,
+    prefix=f"{settings.api_prefix}/auditoria",
+    tags=["Auditoría"],
 )
 app.include_router(
     reportes_router.router,

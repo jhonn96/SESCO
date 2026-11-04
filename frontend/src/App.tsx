@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { nombreRol, rutaPorRol } from '@/lib/roles'
 import { Alertas } from '@/pages/Alertas'
 import { Asistencia } from '@/pages/Asistencia'
+import { Auditoria } from '@/pages/Auditoria'
 import { Comunicados } from '@/pages/Comunicados'
 import { Configuracion } from '@/pages/Configuracion'
 import { Cursos } from '@/pages/Cursos'
@@ -55,6 +56,7 @@ export default function App() {
           element={<Justificaciones />}
         />
         <Route path="/director/reportes" element={<Reportes />} />
+        <Route path="/director/auditoria" element={<Auditoria />} />
         <Route path="/director/configuracion" element={<Configuracion />} />
       </Route>
       <Route element={<ProtectedRoute rol="profesor" />}>

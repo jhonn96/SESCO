@@ -17,6 +17,7 @@ from app.schemas.asistencia import (
     QrResponse,
 )
 from app.schemas.auth import LoginRequest, TokenResponse
+from app.schemas.auditoria import BitacoraResponse, BitacoraUsuarioResponse
 from app.schemas.aviso import (
     AvisoCreate,
     AvisoDestinatarioResponse,
@@ -75,6 +76,8 @@ __all__ = [
     "AvisoDestinatarioResponse",
     "AvisoResponse",
     "AvisoUpdate",
+    "BitacoraResponse",
+    "BitacoraUsuarioResponse",
     "CierreBloqueRequest",
     "CierreBloqueResponse",
     "CursoCreate",

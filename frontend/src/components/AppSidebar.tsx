@@ -16,6 +16,7 @@ import {
   Megaphone,
   School,
   Settings,
+  ShieldCheck,
   Users,
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
@@ -109,6 +110,11 @@ const MENU_POR_ROL: Record<RolNombre, GrupoMenu[]> = {
       titulo: 'Análisis',
       items: [
         { titulo: 'Reportes', icono: BarChart3, ruta: '/director/reportes' },
+        {
+          titulo: 'Auditoría',
+          icono: ShieldCheck,
+          ruta: '/director/auditoria',
+        },
         {
           titulo: 'Configuración',
           icono: Settings,
