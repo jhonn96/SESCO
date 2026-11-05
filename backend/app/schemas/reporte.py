@@ -54,6 +54,25 @@ class PanelAsistenciaResponse(APIModel):
     cursos: list[CursoPanel]
 
 
+class MesAsistencia(ResumenEstados):
+    """Conteo de asistencias de un mes dentro de un periodo lectivo."""
+
+    mes: date
+    porcentaje_asistencia: float = 0.0
+
+
+class ComparacionMensualResponse(APIModel):
+    generado_en: datetime
+    periodo_id: int
+    gestion: int
+    trimestre: int
+    desde: date
+    hasta: date
+    totales: ResumenEstados
+    porcentaje_asistencia: float = 0.0
+    meses: list[MesAsistencia] = Field(default_factory=list)
+
+
 class EstudianteReporte(APIModel):
     """Totales de asistencia de un estudiante en el rango consultado."""
 

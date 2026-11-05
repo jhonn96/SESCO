@@ -8,23 +8,26 @@ curso hasta la fecha consultada; ``justificada`` no cuenta como ausencia.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.exceptions import ReglaNegocio
+from app.core.exceptions import NoEncontrado, ReglaNegocio
 from app.models import (
     Asistencia,
     Curso,
     Estudiante,
     Horario,
     ParametroAsistencia,
+    Periodo,
     Usuario,
 )
 from app.schemas.reporte import (
+    ComparacionMensualResponse,
     CursoPanel,
     EstudianteReporte,
+    MesAsistencia,
     PanelAsistenciaResponse,
     ReporteEstudiantesResponse,
     ResumenEstados,
@@ -325,6 +328,63 @@ def reporte_estudiantes(
         total_estudiantes=len(filas),
         totales=totales,
         estudiantes=filas,
+    )
+
+
+def comparacion_mensual(
+    db: Session,
+    *,
+    periodo_id: int,
+) -> ComparacionMensualResponse:
+    """Compara la asistencia mes a mes dentro de un periodo lectivo (RF-08)."""
+    periodo = db.get(Periodo, periodo_id)
+    if periodo is None:
+        raise NoEncontrado(f"No existe el periodo {periodo_id}")
+
+    mes_expr = func.date_trunc("month", Asistencia.fecha)
+    filas = db.execute(
+        select(mes_expr, Asistencia.estado, func.count())
+        .join(Horario, Asistencia.horario_id == Horario.id)
+        .join(Curso, Curso.id == Horario.curso_id)
+        .where(
+            Curso.periodo_id == periodo.id,
+            Asistencia.fecha >= periodo.fecha_ini,
+            Asistencia.fecha <= periodo.fecha_fin,
+        )
+        .group_by(mes_expr, Asistencia.estado)
+    ).all()
+
+    conteos: dict[date, dict[str, int]] = {}
+    for clave, estado, cantidad in filas:
+        mes = clave.date() if isinstance(clave, datetime) else clave
+        conteos.setdefault(mes.replace(day=1), {})[estado] = cantidad
+
+    meses: list[MesAsistencia] = []
+    total = ResumenEstados()
+    mes = periodo.fecha_ini.replace(day=1)
+    ultimo_mes = periodo.fecha_fin.replace(day=1)
+    while mes <= ultimo_mes:
+        resumen = construir_resumen(conteos.get(mes, {}))
+        meses.append(
+            MesAsistencia(
+                mes=mes,
+                porcentaje_asistencia=porcentaje_asistencia(resumen),
+                **resumen.model_dump(),
+            )
+        )
+        total = _sumar(total, resumen)
+        mes = (mes.replace(day=28) + timedelta(days=4)).replace(day=1)
+
+    return ComparacionMensualResponse(
+        generado_en=qr_service.ahora_local(),
+        periodo_id=periodo.id,
+        gestion=periodo.gestion,
+        trimestre=periodo.trimestre,
+        desde=periodo.fecha_ini,
+        hasta=periodo.fecha_fin,
+        totales=total,
+        porcentaje_asistencia=porcentaje_asistencia(total),
+        meses=meses,
     )
 
 

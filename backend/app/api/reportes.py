@@ -11,6 +11,7 @@ from fastapi import APIRouter, Query
 
 from app.api.deps import CurrentDirector, DbSession
 from app.schemas.reporte import (
+    ComparacionMensualResponse,
     PanelAsistenciaResponse,
     ReporteEstudiantesResponse,
 )
@@ -44,6 +45,26 @@ def panel_asistencia(
     ),
 ) -> PanelAsistenciaResponse:
     return reporte_service.panel(db, fecha=fecha, periodo_id=periodo_id)
+
+
+@router.get(
+    "/comparacion-mensual",
+    response_model=ComparacionMensualResponse,
+    summary="Comparación mensual de asistencia (solo Director)",
+    description=(
+        "Conteos de presentes, tardanzas, faltas y justificadas por cada mes "
+        "del periodo lectivo indicado, junto con el porcentaje de asistencia "
+        "mensual. Incluye los meses sin registros para comparar la evolución."
+    ),
+)
+def comparacion_mensual(
+    db: DbSession,
+    _director: CurrentDirector,
+    periodo_id: int = Query(
+        ge=1, description="Periodo lectivo (gestión + trimestre) a comparar"
+    ),
+) -> ComparacionMensualResponse:
+    return reporte_service.comparacion_mensual(db, periodo_id=periodo_id)
 
 
 @router.get(

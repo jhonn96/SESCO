@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
 import {
@@ -33,8 +34,10 @@ import {
   formatearHora,
   hoyIso,
 } from '@/lib/fechas'
+import { etiquetaPeriodo } from '@/lib/periodos'
 import { ETIQUETA_ROL, nombreRol } from '@/lib/roles'
 import { cn } from '@/lib/utils'
+import { listarPeriodos } from '@/services/periodos'
 import { obtenerPanel, type PanelAsistencia } from '@/services/reportes'
 
 // Recharts solo se descarga al entrar al panel, no en el login.
@@ -218,6 +221,7 @@ export function DirectorDashboard() {
   const { usuario } = useAuth()
   const hoy = hoyIso()
   const [fecha, setFecha] = useState(hoy)
+  const [periodoId, setPeriodoId] = useState<number | undefined>()
 
   const rol = nombreRol(usuario)
   const rolLabel = rol ? ETIQUETA_ROL[rol] : 'Sin rol'
@@ -225,11 +229,26 @@ export function DirectorDashboard() {
     ? `${usuario.nombres} ${usuario.apellidos}`.trim()
     : 'Usuario'
 
+  const periodos = useQuery({
+    queryKey: ['periodos', 'lista'],
+    queryFn: ({ signal }) => listarPeriodos(signal),
+    staleTime: 30 * 60_000,
+  })
+
+  const periodosOrdenados = useMemo(
+    () =>
+      [...(periodos.data ?? [])].sort(
+        (a, b) => b.gestion - a.gestion || b.trimestre - a.trimestre,
+      ),
+    [periodos.data],
+  )
+
   const { data, error, isError, isFetching, isLoading, refetch } = useQuery({
-    queryKey: ['reportes', 'panel', fecha],
-    queryFn: ({ signal }) => obtenerPanel(fecha, signal),
+    queryKey: ['reportes', 'panel', fecha, periodoId],
+    queryFn: ({ signal }) => obtenerPanel({ fecha, periodoId }, signal),
     placeholderData: keepPreviousData,
     staleTime: 30_000,
+    refetchInterval: 60_000,
     retry: 1,
   })
 
@@ -310,6 +329,30 @@ export function DirectorDashboard() {
                     onChange={(evento) => cambiarFecha(evento.target.value)}
                     className="h-10 w-48 text-base md:text-base"
                   />
+                </div>
+                <div className="grid w-56 gap-1.5">
+                  <Label htmlFor="periodo-panel" className="text-sm">
+                    Trimestre
+                  </Label>
+                  <Select
+                    id="periodo-panel"
+                    value={periodoId === undefined ? '' : String(periodoId)}
+                    onChange={(evento) =>
+                      setPeriodoId(
+                        evento.target.value
+                          ? Number(evento.target.value)
+                          : undefined,
+                      )
+                    }
+                    disabled={periodos.isLoading}
+                  >
+                    <option value="">Todos los trimestres</option>
+                    {periodosOrdenados.map((periodo) => (
+                      <option key={periodo.id} value={periodo.id}>
+                        {etiquetaPeriodo(periodo)}
+                      </option>
+                    ))}
+                  </Select>
                 </div>
                 <Button
                   type="button"

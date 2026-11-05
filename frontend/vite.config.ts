@@ -13,13 +13,11 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
-    proxy: {
-      // Todas las llamadas a /api se reenvían al backend FastAPI.
-      '/api': {
-        target: 'http://127.0.0.1:8000',
-        changeOrigin: true,
-      },
-    },
+  port: 5173,
+  host: '0.0.0.0', // Escucha en todas las interfaces
+  allowedHosts: true, // Permite el acceso desde cualquier IP (útil en desarrollo)
+  proxy: {
+    '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
   },
+},
 })

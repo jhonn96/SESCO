@@ -44,6 +44,11 @@ export interface PanelAsistencia {
   cursos: CursoPanel[]
 }
 
+export interface FiltrosPanel {
+  fecha?: string
+  periodoId?: number
+}
+
 /**
  * Panel de asistencia del director.
  *
@@ -51,11 +56,42 @@ export interface PanelAsistencia {
  * Si no se envía `fecha`, el backend usa la fecha local del colegio.
  */
 export function obtenerPanel(
-  fecha?: string,
+  filtros: FiltrosPanel = {},
   signal?: AbortSignal,
 ): Promise<PanelAsistencia> {
   return api.get<PanelAsistencia>('/reportes/panel', {
-    query: { fecha },
+    query: { fecha: filtros.fecha, periodo_id: filtros.periodoId },
+    signal,
+  })
+}
+
+/** Conteo mensual dentro de un periodo lectivo. */
+export interface MesComparacion extends ResumenEstados {
+  /** Primer día del mes en formato ISO. */
+  mes: string
+  porcentaje_asistencia: number
+}
+
+/** Respuesta de `GET /api/reportes/comparacion-mensual`. */
+export interface ComparacionMensual {
+  generado_en: string
+  periodo_id: number
+  gestion: number
+  trimestre: number
+  desde: string
+  hasta: string
+  totales: ResumenEstados
+  porcentaje_asistencia: number
+  meses: MesComparacion[]
+}
+
+/** Comparación mes a mes de la asistencia de un periodo (solo Director). */
+export function obtenerComparacionMensual(
+  periodoId: number,
+  signal?: AbortSignal,
+): Promise<ComparacionMensual> {
+  return api.get<ComparacionMensual>('/reportes/comparacion-mensual', {
+    query: { periodo_id: periodoId },
     signal,
   })
 }

@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, lazy, Suspense, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
   columnGroupingFeature,
@@ -24,9 +24,17 @@ import { TablaEstado } from '@/components/TablaEstado'
 import { TablaPaginacion } from '@/components/TablaPaginacion'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
   TableBody,
@@ -42,13 +50,22 @@ import {
 } from '@/lib/cursos'
 import { mensajeDeError } from '@/lib/errores'
 import { formatearFechaLarga, hoyIso } from '@/lib/fechas'
+import { etiquetaPeriodo, periodoVigente } from '@/lib/periodos'
 import { cn } from '@/lib/utils'
 import { listarCursos } from '@/services/cursos'
+import { listarPeriodos } from '@/services/periodos'
 import {
+  obtenerComparacionMensual,
   obtenerReporteEstudiantes,
   type EstudianteReporte,
   type ResumenEstados,
 } from '@/services/reportes'
+
+const ComparacionMensualChart = lazy(() =>
+  import('@/components/ComparacionMensualChart').then((modulo) => ({
+    default: modulo.ComparacionMensualChart,
+  })),
+)
 
 const CURSOS_POR_PAGINA = 6
 const FORMATO_PORCENTAJE = new Intl.NumberFormat('es-BO', {
@@ -216,6 +233,14 @@ function nombreMes(mes: string): string {
   return texto.charAt(0).toUpperCase() + texto.slice(1)
 }
 
+function nombreMesCorto(iso: string): string {
+  const [anio, numeroMes] = iso.split('-').map(Number)
+  const texto = new Intl.DateTimeFormat('es-BO', { month: 'short' })
+    .format(new Date(anio, numeroMes - 1, 15))
+    .replace(/\./g, '')
+  return texto.charAt(0).toUpperCase() + texto.slice(1)
+}
+
 function escaparCsv(valor: string | number): string {
   return `"${String(valor).replace(/"/g, '""')}"`
 }
@@ -306,6 +331,7 @@ export function Reportes() {
   const [desde, setDesde] = useState(primerDiaDelMes)
   const [hasta, setHasta] = useState(hoyIso)
   const [cursoId, setCursoId] = useState<number | undefined>()
+  const [periodoId, setPeriodoId] = useState<number | undefined>()
   const [pagina, setPagina] = useState(0)
 
   const rango = modo === 'mes' ? rangoDelMes(mes) : { desde, hasta }
@@ -317,9 +343,33 @@ export function Reportes() {
     staleTime: 10 * 60_000,
   })
 
+  const periodos = useQuery({
+    queryKey: ['periodos', 'lista'],
+    queryFn: ({ signal }) => listarPeriodos(signal),
+    staleTime: 30 * 60_000,
+  })
+
   const cursosOrdenados = useMemo(
     () => [...(cursos.data ?? [])].sort(compararCursos),
     [cursos.data],
+  )
+
+  const periodosOrdenados = useMemo(
+    () =>
+      [...(periodos.data ?? [])].sort(
+        (a, b) => b.gestion - a.gestion || b.trimestre - a.trimestre,
+      ),
+    [periodos.data],
+  )
+
+  const periodoPredeterminado = useMemo(
+    () => periodoVigente(periodos.data ?? [], hoyIso()),
+    [periodos.data],
+  )
+
+  const periodoSeleccionado = periodoId ?? periodoPredeterminado?.id
+  const periodoActivo = periodosOrdenados.find(
+    (periodo) => periodo.id === periodoSeleccionado,
   )
 
   const consulta = useQuery({
@@ -336,6 +386,31 @@ export function Reportes() {
     placeholderData: keepPreviousData,
     enabled: !rangoInvalido,
   })
+
+  const comparacion = useQuery({
+    queryKey: ['reportes', 'comparacion-mensual', periodoSeleccionado],
+    queryFn: ({ signal }) =>
+      obtenerComparacionMensual(periodoSeleccionado!, signal),
+    enabled: periodoSeleccionado !== undefined,
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
+  })
+
+  const serieMensual = useMemo(
+    () =>
+      (comparacion.data?.meses ?? []).map((item) => ({
+        mes: nombreMesCorto(item.mes),
+        etiqueta: nombreMes(item.mes.slice(0, 7)),
+        presentes:
+          item.registros === 0 ? null : (item.presentes / item.registros) * 100,
+        tardanzas:
+          item.registros === 0 ? null : (item.tardanzas / item.registros) * 100,
+        faltas:
+          item.registros === 0 ? null : (item.faltas / item.registros) * 100,
+        registros: item.registros,
+      })),
+    [comparacion.data],
+  )
 
   const reporte = consulta.data
   const estudiantes = useMemo(
@@ -381,6 +456,7 @@ export function Reportes() {
     setDesde(primerDiaDelMes())
     setHasta(hoyIso())
     setCursoId(undefined)
+    setPeriodoId(undefined)
     setPagina(0)
   }
 
@@ -392,7 +468,7 @@ export function Reportes() {
     <DashboardShell seccion="Reportes">
       <PageHeader
         titulo="Reportes de asistencia"
-        descripcion="Totales por estudiante en un mes o en un rango de fechas, agrupados por curso y ordenados por apellidos. El porcentaje de asistencia descuenta las faltas de los registros del periodo."
+        descripcion="Totales por estudiante en un mes o en un rango de fechas, agrupados por curso y ordenados por apellidos, más la comparación mensual por trimestre. El porcentaje de asistencia descuenta las faltas de los registros del periodo."
         icono={BarChart3}
         acciones={
           <>
@@ -581,6 +657,96 @@ export function Reportes() {
               : `Del ${formatearFechaLarga(rango.desde)} al ${formatearFechaLarga(rango.hasta)}`}
           </p>
         )}
+      </Card>
+
+      <Card
+        className="[--card-spacing:--spacing(6)] shadow-sm"
+        aria-busy={comparacion.isFetching}
+      >
+        <CardHeader>
+          <CardTitle className="text-2xl">Comparación mensual</CardTitle>
+          <CardDescription className="text-base">
+            {comparacion.data && periodoActivo
+              ? `${etiquetaPeriodo(periodoActivo)} · ${porcentaje(comparacion.data.porcentaje_asistencia)} de asistencia general · ${comparacion.data.totales.registros} registros`
+              : 'Evolución mensual de presentes, tardanzas y faltas dentro del trimestre seleccionado.'}
+          </CardDescription>
+          <CardAction>
+            <div className="grid w-60 gap-1.5">
+              <label
+                htmlFor="comparacion-periodo"
+                className="text-sm font-medium text-muted-foreground"
+              >
+                Trimestre
+              </label>
+              <Select
+                id="comparacion-periodo"
+                value={
+                  periodoSeleccionado === undefined
+                    ? ''
+                    : String(periodoSeleccionado)
+                }
+                onChange={(evento) =>
+                  setPeriodoId(
+                    evento.target.value
+                      ? Number(evento.target.value)
+                      : undefined,
+                  )
+                }
+                disabled={periodos.isLoading}
+              >
+                {periodoSeleccionado === undefined ? (
+                  <option value="">
+                    {periodos.isLoading
+                      ? 'Cargando trimestres…'
+                      : 'Sin trimestres registrados'}
+                  </option>
+                ) : null}
+                {periodosOrdenados.map((periodo) => (
+                  <option key={periodo.id} value={periodo.id}>
+                    {etiquetaPeriodo(periodo)}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          {periodoSeleccionado === undefined ? (
+            <p className="rounded-xl border border-dashed border-border bg-muted/30 px-6 py-12 text-center text-base text-muted-foreground">
+              No hay trimestres registrados para comparar la asistencia
+              mensual.
+            </p>
+          ) : comparacion.isLoading ? (
+            <Skeleton className="h-[340px] w-full rounded-lg sm:h-[380px] lg:h-[420px]" />
+          ) : comparacion.isError ? (
+            <div
+              className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+              role="alert"
+            >
+              <span>
+                No se pudo cargar la comparación mensual.{' '}
+                {mensajeDeError(comparacion.error)}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void comparacion.refetch()}
+                disabled={comparacion.isFetching}
+              >
+                Reintentar
+              </Button>
+            </div>
+          ) : (
+            <Suspense
+              fallback={
+                <Skeleton className="h-[340px] w-full rounded-lg sm:h-[380px] lg:h-[420px]" />
+              }
+            >
+              <ComparacionMensualChart datos={serieMensual} />
+            </Suspense>
+          )}
+        </CardContent>
       </Card>
 
       {reporte ? (
