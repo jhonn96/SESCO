@@ -1,12 +1,38 @@
-# SESCO · Backend (probado con Python 3.12)
-# Instalación: python -m venv venv && venv\Scripts\activate && pip install -r requirements.txt
+# SESCO · Backend (requiere Python 3.11+, probado con 3.12 y 3.14)
+#
+# Windows (PowerShell):
+#   py -3.12 -m venv .venv
+#   .\.venv\Scripts\Activate.ps1
+#   python -m pip install --upgrade pip
+#   pip install -r requirements.txt
+#
+# Linux / macOS:
+#   python3 -m venv .venv
+#   source .venv/bin/activate
+#   python -m pip install --upgrade pip
+#   pip install -r requirements.txt
+#
+# No olvides copiar backend/.env.example a backend/.env y configurar PostgreSQL.
+
+# --- API / servidor ---
 fastapi==0.162.0
 uvicorn[standard]==0.54.0
+
+# --- Persistencia (PostgreSQL 16) ---
 sqlalchemy==2.1.6
 psycopg2-binary==2.9.13
-pyotp==2.10.0
-python-jose[cryptography]==3.5.0
-passlib[bcrypt]==1.7.4
-# passlib 1.7.4 es incompatible con bcrypt >= 5 (su backend falla al inicializarse)
-bcrypt==4.3.0
+
+# --- Configuración desde .env ---
+pydantic==2.14.3
 pydantic-settings==2.16.1
+python-dotenv==1.2.4
+
+# --- Seguridad ---
+# QR dinámico TOTP (RFC 6238)
+pyotp==2.10.0
+# JWT firmados (HS256)
+python-jose[cryptography]==3.5.0
+# Hash de contraseñas. passlib 1.7.4 es incompatible con bcrypt >= 5
+# (su backend falla al inicializarse), por eso se fija bcrypt 4.3.0.
+passlib==1.7.4
+bcrypt==4.3.0
