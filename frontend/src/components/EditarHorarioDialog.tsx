@@ -23,6 +23,7 @@ import {
   etiquetaDia,
   type DiaSemana,
 } from '@/lib/horarios'
+import { compararPersonas, nombreCompleto } from '@/lib/personas'
 import type { Curso } from '@/services/cursos'
 import {
   actualizarHorario,
@@ -30,6 +31,7 @@ import {
   type NuevoHorario,
 } from '@/services/horarios'
 import { listarMaterias } from '@/services/materias'
+import { listarProfesores } from '@/services/profesores'
 
 interface EditarHorarioDialogProps {
   abierto: boolean
@@ -43,6 +45,7 @@ interface EditarHorarioDialogProps {
 interface Formulario {
   diaSemana: DiaSemana
   materiaId: string
+  profesorId: string
   horaInicio: string
   horaFin: string
   esUltimoBloque: boolean
@@ -60,6 +63,10 @@ function validar(formulario: Formulario): Errores {
 
   if (!formulario.materiaId) {
     errores.materiaId = 'Selecciona la materia.'
+  }
+
+  if (!formulario.profesorId) {
+    errores.profesorId = 'Selecciona el profesor.'
   }
 
   if (!formulario.horaInicio) {
@@ -90,6 +97,7 @@ export function EditarHorarioDialog({
   const [formulario, setFormulario] = useState<Formulario>({
     diaSemana: horario.dia_semana,
     materiaId: String(horario.materia_id),
+    profesorId: String(horario.profesor_id),
     horaInicio: horario.hora_inicio.slice(0, 5),
     horaFin: horario.hora_fin.slice(0, 5),
     esUltimoBloque: horario.es_ultimo_bloque,
@@ -114,11 +122,23 @@ export function EditarHorarioDialog({
     a.nombre.localeCompare(b.nombre, 'es'),
   )
 
+  const profesores = useQuery({
+    queryKey: ['profesores', 'selector'],
+    queryFn: ({ signal }) => listarProfesores({ limit: 100 }, signal),
+    enabled: abierto,
+    staleTime: 5 * 60_000,
+  })
+
+  const profesoresOrdenados = [...(profesores.data?.data ?? [])].sort((a, b) =>
+    compararPersonas(a.usuario, b.usuario),
+  )
+
   const guardar = useMutation({
     mutationFn: () => {
       const datos: Partial<NuevoHorario> = {
         dia_semana: formulario.diaSemana,
         materia_id: Number(formulario.materiaId),
+        profesor_id: Number(formulario.profesorId),
         hora_inicio: aHoraCompleta(formulario.horaInicio),
         hora_fin: aHoraCompleta(formulario.horaFin),
         es_ultimo_bloque: formulario.esUltimoBloque,
@@ -198,7 +218,8 @@ export function EditarHorarioDialog({
           <DialogTitle>Editar bloque de horario</DialogTitle>
           <DialogDescription>
             {curso ? `${etiquetaCurso(curso)}. ` : ''}
-            Los horarios no pueden solaparse dentro del mismo día.
+            Los horarios no pueden solaparse dentro del mismo día ni con otra
+            clase del mismo profesor.
           </DialogDescription>
         </DialogHeader>
 
@@ -249,6 +270,41 @@ export function EditarHorarioDialog({
                 </p>
               ) : null}
             </div>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="editar-horario-profesor">Profesor</Label>
+            <Select
+              id="editar-horario-profesor"
+              value={formulario.profesorId}
+              onChange={(evento) =>
+                actualizar('profesorId', evento.target.value)
+              }
+              aria-invalid={Boolean(errores.profesorId)}
+              disabled={profesores.isLoading}
+            >
+              <option value="">
+                {profesores.isLoading
+                  ? 'Cargando profesores...'
+                  : 'Selecciona un profesor'}
+              </option>
+              {profesoresOrdenados.map((profesor) => (
+                <option key={profesor.usuario_id} value={profesor.usuario_id}>
+                  {nombreCompleto(profesor.usuario) ||
+                    `Profesor #${profesor.usuario_id}`}
+                </option>
+              ))}
+            </Select>
+            {errores.profesorId ? (
+              <p className="text-sm text-destructive" role="alert">
+                {errores.profesorId}
+              </p>
+            ) : null}
+            {profesores.isError ? (
+              <p className="text-sm text-destructive" role="alert">
+                No se pudieron cargar los profesores.
+              </p>
+            ) : null}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

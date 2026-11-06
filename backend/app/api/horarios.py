@@ -33,6 +33,7 @@ def listar_horarios(
     response: Response,
     curso_id: int | None = Query(default=None, ge=1),
     materia_id: int | None = Query(default=None, ge=1),
+    profesor_id: int | None = Query(default=None, ge=1),
     dia_semana: DiaSemana | None = Query(
         default=None, description="Filtra la grilla semanal por día"
     ),
@@ -44,6 +45,7 @@ def listar_horarios(
         db,
         curso_id=curso_id,
         materia_id=materia_id,
+        profesor_id=profesor_id,
         dia_semana=dia_semana,
         es_ultimo_bloque=es_ultimo_bloque,
         skip=skip,
@@ -70,8 +72,9 @@ def obtener_horario(
     status_code=status.HTTP_201_CREATED,
     summary="Crear un bloque de horario (solo Director)",
     description=(
-        "Rechaza solapamientos dentro del mismo curso y día, y un segundo "
-        "bloque de cierre (es_ultimo_bloque) para ese día."
+        "Rechaza solapamientos dentro del mismo curso y día, un segundo "
+        "bloque de cierre (es_ultimo_bloque) para ese día y choques de "
+        "agenda del profesor con otro curso a la misma hora."
     ),
 )
 def crear_horario(

@@ -23,9 +23,11 @@ import {
   etiquetaDia,
   type DiaSemana,
 } from '@/lib/horarios'
+import { compararPersonas, nombreCompleto } from '@/lib/personas'
 import type { Curso } from '@/services/cursos'
 import { crearHorario } from '@/services/horarios'
 import { listarMaterias } from '@/services/materias'
+import { listarProfesores } from '@/services/profesores'
 
 interface NuevoHorarioDialogProps {
   abierto: boolean
@@ -38,6 +40,7 @@ interface NuevoHorarioDialogProps {
 interface Formulario {
   diaSemana: DiaSemana
   materiaId: string
+  profesorId: string
   horaInicio: string
   horaFin: string
   esUltimoBloque: boolean
@@ -48,6 +51,7 @@ type Errores = Partial<Record<keyof Formulario, string>>
 const FORMULARIO_VACIO: Formulario = {
   diaSemana: 'lunes',
   materiaId: '',
+  profesorId: '',
   horaInicio: '',
   horaFin: '',
   esUltimoBloque: false,
@@ -63,6 +67,10 @@ function validar(formulario: Formulario): Errores {
 
   if (!formulario.materiaId) {
     errores.materiaId = 'Selecciona la materia.'
+  }
+
+  if (!formulario.profesorId) {
+    errores.profesorId = 'Selecciona el profesor.'
   }
 
   if (!formulario.horaInicio) {
@@ -109,12 +117,24 @@ export function NuevoHorarioDialog({
     a.nombre.localeCompare(b.nombre, 'es'),
   )
 
+  const profesores = useQuery({
+    queryKey: ['profesores', 'selector'],
+    queryFn: ({ signal }) => listarProfesores({ limit: 100 }, signal),
+    enabled: abierto,
+    staleTime: 5 * 60_000,
+  })
+
+  const profesoresOrdenados = [...(profesores.data?.data ?? [])].sort((a, b) =>
+    compararPersonas(a.usuario, b.usuario),
+  )
+
   const crear = useMutation({
     mutationFn: () => {
       if (!curso) throw new Error('Selecciona un curso antes de añadir bloques.')
       return crearHorario({
         curso_id: curso.id,
         materia_id: Number(formulario.materiaId),
+        profesor_id: Number(formulario.profesorId),
         dia_semana: formulario.diaSemana,
         hora_inicio: aHoraCompleta(formulario.horaInicio),
         hora_fin: aHoraCompleta(formulario.horaFin),
@@ -188,7 +208,7 @@ export function NuevoHorarioDialog({
           <DialogTitle>Añadir bloque de horario</DialogTitle>
           <DialogDescription>
             {curso
-              ? `Nuevo bloque para ${etiquetaCurso(curso)}. No puede solaparse con otro del mismo día.`
+              ? `Nuevo bloque para ${etiquetaCurso(curso)}. No puede solaparse con otro del mismo día ni con otra clase del mismo profesor.`
               : 'Selecciona un curso para añadir bloques a su horario.'}
           </DialogDescription>
         </DialogHeader>
@@ -240,6 +260,41 @@ export function NuevoHorarioDialog({
                 </p>
               ) : null}
             </div>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="nuevo-horario-profesor">Profesor</Label>
+            <Select
+              id="nuevo-horario-profesor"
+              value={formulario.profesorId}
+              onChange={(evento) =>
+                actualizar('profesorId', evento.target.value)
+              }
+              aria-invalid={Boolean(errores.profesorId)}
+              disabled={profesores.isLoading}
+            >
+              <option value="">
+                {profesores.isLoading
+                  ? 'Cargando profesores...'
+                  : 'Selecciona un profesor'}
+              </option>
+              {profesoresOrdenados.map((profesor) => (
+                <option key={profesor.usuario_id} value={profesor.usuario_id}>
+                  {nombreCompleto(profesor.usuario) ||
+                    `Profesor #${profesor.usuario_id}`}
+                </option>
+              ))}
+            </Select>
+            {errores.profesorId ? (
+              <p className="text-sm text-destructive" role="alert">
+                {errores.profesorId}
+              </p>
+            ) : null}
+            {profesores.isError ? (
+              <p className="text-sm text-destructive" role="alert">
+                No se pudieron cargar los profesores.
+              </p>
+            ) : null}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

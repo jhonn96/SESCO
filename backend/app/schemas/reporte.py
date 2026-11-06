@@ -8,6 +8,7 @@ from pydantic import Field
 
 from app.schemas.common import APIModel
 from app.schemas.curso import CursoResponse
+from app.schemas.estudiante import TutorACargoResponse
 
 
 class ResumenEstados(APIModel):
@@ -100,3 +101,26 @@ class ReporteEstudiantesResponse(APIModel):
     total_estudiantes: int = 0
     totales: ResumenEstados
     estudiantes: list[EstudianteReporte] = Field(default_factory=list)
+
+
+class RankingInasistenciaItem(APIModel):
+    """Estudiante dentro del ranking mensual de inasistencias."""
+
+    usuario_id: int
+    nombres: str
+    apellidos: str
+    ci: str
+    curso_id: int
+    curso: CursoResponse | None = None
+    faltas: int = 0
+    tardanzas: int = 0
+    tutor: TutorACargoResponse | None = None
+    tutor_nombre: str | None = None
+
+
+class RankingInasistenciasResponse(APIModel):
+    generado_en: datetime
+    desde: date
+    hasta: date
+    total_estudiantes: int = 0
+    estudiantes: list[RankingInasistenciaItem] = Field(default_factory=list)

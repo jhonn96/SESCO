@@ -245,17 +245,24 @@ def historial_hijo(
     estudiante_id: int,
     *,
     mes: str | None = None,
+    desde: date | None = None,
+    hasta: date | None = None,
     estado: str | None = None,
     skip: int = 0,
     limit: int = 20,
 ) -> tuple[list[dict[str, Any]], int]:
-    """Historial paginado del hijo, con filtros de mes (``YYYY-MM``) y estado.
+    """Historial paginado del hijo, con filtros de mes/rango y estado.
 
     Solo se consideran fechas ya ocurridas: el seed contiene registros
     cargados con antelación y no tiene sentido mostrarle al tutor una
     asistencia del futuro.
     """
     validar_hijo(db, tutor_id, estudiante_id)
+
+    if desde is not None and hasta is not None and desde > hasta:
+        raise ReglaNegocio(
+            "La fecha inicial del reporte no puede ser posterior a la final"
+        )
 
     condiciones: list[Any] = [
         Asistencia.estudiante_id == estudiante_id,
@@ -273,6 +280,11 @@ def historial_hijo(
         condiciones.extend(
             [Asistencia.fecha >= inicio, Asistencia.fecha < siguiente]
         )
+
+    if desde is not None:
+        condiciones.append(Asistencia.fecha >= desde)
+    if hasta is not None:
+        condiciones.append(Asistencia.fecha <= hasta)
 
     if estado:
         condiciones.append(Asistencia.estado == estado)

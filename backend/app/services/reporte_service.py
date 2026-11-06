@@ -21,14 +21,19 @@ from app.models import (
     Horario,
     ParametroAsistencia,
     Periodo,
+    Tutor,
+    Tutoria,
     Usuario,
 )
+from app.schemas.estudiante import TutorACargoResponse
 from app.schemas.reporte import (
     ComparacionMensualResponse,
     CursoPanel,
     EstudianteReporte,
     MesAsistencia,
     PanelAsistenciaResponse,
+    RankingInasistenciaItem,
+    RankingInasistenciasResponse,
     ReporteEstudiantesResponse,
     ResumenEstados,
     SerieDia,
@@ -328,6 +333,135 @@ def reporte_estudiantes(
         total_estudiantes=len(filas),
         totales=totales,
         estudiantes=filas,
+    )
+
+
+def _tutores_principales(
+    db: Session, estudiante_ids: list[int]
+) -> dict[int, TutorACargoResponse]:
+    """Tutor principal confirmado (o el primero confirmado) de cada estudiante."""
+    if not estudiante_ids:
+        return {}
+    filas = db.execute(
+        select(Tutoria.estudiante_id, Usuario, Tutor, Tutoria)
+        .join(Usuario, Usuario.id == Tutoria.tutor_id)
+        .join(Tutor, Tutor.usuario_id == Usuario.id)
+        .where(
+            Tutoria.estudiante_id.in_(estudiante_ids),
+            Tutoria.estado == "confirmada",
+        )
+        .order_by(
+            Tutoria.estudiante_id,
+            Tutoria.es_principal.desc(),
+            Usuario.apellidos,
+            Usuario.nombres,
+        )
+    ).all()
+
+    tutores: dict[int, TutorACargoResponse] = {}
+    for estudiante_id, usuario, tutor, tutoria in filas:
+        if estudiante_id in tutores:
+            continue
+        tutores[estudiante_id] = TutorACargoResponse(
+            tutor_id=usuario.id,
+            nombres=usuario.nombres,
+            apellidos=usuario.apellidos,
+            ci=usuario.ci,
+            parentesco=tutoria.parentesco,
+            telefono=tutor.telefono,
+            es_principal=tutoria.es_principal,
+        )
+    return tutores
+
+
+def ranking_inasistencias(
+    db: Session,
+    *,
+    desde: date,
+    hasta: date,
+    curso_id: int | None = None,
+    periodo_id: int | None = None,
+    limit: int = 200,
+) -> RankingInasistenciasResponse:
+    """Estudiantes ordenados por faltas y tardanzas dentro de un rango de fechas."""
+    if desde > hasta:
+        raise ReglaNegocio("La fecha inicial no puede ser posterior a la final")
+    if (hasta - desde).days > 366:
+        raise ReglaNegocio("El rango de fechas no puede superar un año")
+
+    filtros = []
+    if curso_id is not None:
+        filtros.append(Estudiante.curso_id == curso_id)
+    if periodo_id is not None:
+        filtros.append(Curso.periodo_id == periodo_id)
+
+    estudiantes = list(
+        db.scalars(
+            select(Estudiante)
+            .join(Curso, Curso.id == Estudiante.curso_id)
+            .options(
+                joinedload(Estudiante.usuario),
+                joinedload(Estudiante.curso),
+            )
+            .where(*filtros)
+            .order_by(Estudiante.usuario_id)
+        )
+    )
+
+    ids = [estudiante.usuario_id for estudiante in estudiantes]
+    conteos: dict[int, dict[str, int]] = {}
+    if ids:
+        filas = db.execute(
+            select(Asistencia.estudiante_id, Asistencia.estado, func.count())
+            .where(
+                Asistencia.estudiante_id.in_(ids),
+                Asistencia.fecha >= desde,
+                Asistencia.fecha <= hasta,
+            )
+            .group_by(Asistencia.estudiante_id, Asistencia.estado)
+        ).all()
+        for estudiante_id, estado, cantidad in filas:
+            conteos.setdefault(estudiante_id, {})[estado] = cantidad
+
+    tutores = _tutores_principales(db, ids)
+
+    items: list[RankingInasistenciaItem] = []
+    for estudiante in estudiantes:
+        resumen = construir_resumen(conteos.get(estudiante.usuario_id, {}))
+        tutor = tutores.get(estudiante.usuario_id)
+        items.append(
+            RankingInasistenciaItem(
+                usuario_id=estudiante.usuario_id,
+                nombres=estudiante.usuario.nombres,
+                apellidos=estudiante.usuario.apellidos,
+                ci=estudiante.usuario.ci,
+                curso_id=estudiante.curso_id,
+                curso=estudiante.curso,
+                faltas=resumen.faltas,
+                tardanzas=resumen.tardanzas,
+                tutor=tutor,
+                tutor_nombre=(
+                    f"{tutor.nombres} {tutor.apellidos}".strip() if tutor else None
+                ),
+            )
+        )
+
+    items.sort(
+        key=lambda item: (
+            -item.faltas,
+            -item.tardanzas,
+            item.apellidos.lower(),
+            item.nombres.lower(),
+            item.usuario_id,
+        )
+    )
+
+    return RankingInasistenciasResponse(
+        generado_en=qr_service.ahora_local(),
+        desde=desde,
+        hasta=hasta,
+        total_estudiantes=len(items),
+        estudiantes=items[:limit],
     )
 
 

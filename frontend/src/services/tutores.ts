@@ -123,6 +123,10 @@ export function obtenerResumenHijo(
 export interface FiltrosHistorialHijo {
   /** Mes en formato `YYYY-MM`. */
   mes?: string
+  /** Fecha inicial del rango (inclusive) en formato `YYYY-MM-DD`. */
+  desde?: string
+  /** Fecha final del rango (inclusive) en formato `YYYY-MM-DD`. */
+  hasta?: string
   estado?: HistorialHijo['estado']
   skip?: number
   limit?: number
@@ -154,6 +158,8 @@ export function listarHistorialHijo(
     {
       query: {
         mes: filtros.mes?.trim() || undefined,
+        desde: filtros.desde || undefined,
+        hasta: filtros.hasta || undefined,
         estado: filtros.estado,
         skip: filtros.skip ?? 0,
         limit: filtros.limit ?? 20,
@@ -161,4 +167,33 @@ export function listarHistorialHijo(
       signal,
     },
   )
+}
+
+/**
+ * Descarga todo el historial del hijo paginando la API. Se usa en los
+ * reportes para que el PDF incluya el rango completo, sin el límite de 100.
+ */
+export async function obtenerTodoElHistorialHijo(
+  estudianteId: number,
+  filtros: Omit<FiltrosHistorialHijo, 'skip' | 'limit'> = {},
+  signal?: AbortSignal,
+): Promise<HistorialHijo[]> {
+  const tamano = 100
+  const filas: HistorialHijo[] = []
+  let skip = 0
+  let total = Number.POSITIVE_INFINITY
+
+  while (skip < total) {
+    const { data, total: encontrados } = await listarHistorialHijo(
+      estudianteId,
+      { ...filtros, skip, limit: tamano },
+      signal,
+    )
+    total = encontrados
+    filas.push(...data)
+    if (data.length === 0) break
+    skip += data.length
+  }
+
+  return filas
 }

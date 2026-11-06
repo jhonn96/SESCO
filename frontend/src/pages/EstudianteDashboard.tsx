@@ -6,10 +6,12 @@ import {
 } from '@tanstack/react-query'
 import {
   AlertTriangle,
+  BookOpen,
   CalendarCheck2,
   CalendarDays,
   CheckCircle2,
   ClipboardList,
+  Clock,
   Clock3,
   GraduationCap,
   IdCard,
@@ -275,6 +277,7 @@ export function EstudianteDashboard() {
   const codigoVisible = data?.codigo
     ? `${data.codigo.slice(0, 4)} ${data.codigo.slice(4)}`
     : null
+  const rangoClase = data ? rangoHorario(data.hora_inicio, data.hora_fin) : null
 
   const posicion = posicionEnColegio(new Date(ahora))
   const curso = horario.data?.curso ?? null
@@ -360,6 +363,60 @@ export function EstudianteDashboard() {
           {/* Mi QR                                                        */}
           {/* ------------------------------------------------------------ */}
           <TabsContent value="qr" className="space-y-6">
+            {data?.materia ? (
+              <section
+                aria-labelledby="titulo-clase-actual"
+                className="rounded-3xl border border-primary/25 bg-primary/5 p-4 shadow-sm sm:p-5"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                      <BookOpen className="size-5" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold tracking-widest text-primary uppercase">
+                        Clase actual
+                      </p>
+                      <h2
+                        id="titulo-clase-actual"
+                        className="truncate text-lg font-semibold tracking-tight text-foreground sm:text-xl"
+                      >
+                        {data.materia}
+                      </h2>
+                      {data.profesor ? (
+                        <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
+                          <UserRound
+                            className="size-4 shrink-0"
+                            aria-hidden="true"
+                          />
+                          <span className="truncate">
+                            Profesor:{' '}
+                            <span className="font-medium text-foreground">
+                              {data.profesor}
+                            </span>
+                          </span>
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {rangoClase ? (
+                    <div className="flex shrink-0 items-center gap-2 rounded-2xl border border-primary/20 bg-background/70 px-4 py-2.5">
+                      <Clock className="size-4.5 text-primary" aria-hidden="true" />
+                      <div>
+                        <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+                          Horario
+                        </p>
+                        <p className="text-sm font-semibold tabular-nums text-foreground">
+                          {rangoClase}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
               <div className="lg:col-span-1">
                 {sinClase ? (

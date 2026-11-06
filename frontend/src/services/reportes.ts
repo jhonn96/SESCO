@@ -146,3 +146,62 @@ export function obtenerReporteEstudiantes(
     signal,
   })
 }
+
+/** Tutor principal confirmado de un estudiante. */
+export interface TutorRanking {
+  tutor_id: number
+  nombres: string
+  apellidos: string
+  ci: string
+  parentesco: string
+  telefono: string | null
+  es_principal: boolean
+}
+
+/** Fila del ranking mensual de inasistencias. */
+export interface RankingInasistencia {
+  usuario_id: number
+  nombres: string
+  apellidos: string
+  ci: string
+  curso_id: number
+  curso: Curso | null
+  faltas: number
+  tardanzas: number
+  tutor: TutorRanking | null
+  tutor_nombre: string | null
+}
+
+/** Respuesta de `GET /api/reportes/ranking-inasistencias`. */
+export interface RankingInasistencias {
+  generado_en: string
+  desde: string
+  hasta: string
+  total_estudiantes: number
+  estudiantes: RankingInasistencia[]
+}
+
+export interface FiltrosRankingInasistencias {
+  desde?: string
+  hasta?: string
+  cursoId?: number
+  periodoId?: number
+  limit?: number
+}
+
+/** Ranking de estudiantes por faltas y tardanzas (solo Director). */
+export function obtenerRankingInasistencias(
+  filtros: FiltrosRankingInasistencias = {},
+  signal?: AbortSignal,
+): Promise<RankingInasistencias> {
+  return api.get<RankingInasistencias>('/reportes/ranking-inasistencias', {
+    query: {
+      desde: filtros.desde,
+      hasta: filtros.hasta,
+      curso_id: filtros.cursoId,
+      periodo_id: filtros.periodoId,
+      limit: filtros.limit,
+    },
+    signal,
+  })
+}

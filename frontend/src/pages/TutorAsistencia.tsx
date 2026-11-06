@@ -1,10 +1,5 @@
-import { useMemo, useState, type FormEvent } from 'react'
-import {
-  keepPreviousData,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
   createColumnHelper,
   rowPaginationFeature,
@@ -17,31 +12,20 @@ import {
   FileCheck2,
   Inbox,
   ListFilter,
-  LoaderCircle,
   PencilLine,
   QrCode,
   RefreshCw,
-  Send,
   Undo2,
 } from 'lucide-react'
-import { toast } from 'sonner'
 
 import { DashboardShell } from '@/components/DashboardShell'
+import { JustificarModal } from '@/components/JustificarModal'
 import { PageHeader } from '@/components/PageHeader'
 import { TablaEstado } from '@/components/TablaEstado'
 import { TablaPaginacion } from '@/components/TablaPaginacion'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -53,15 +37,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Textarea } from '@/components/ui/textarea'
 import { ESTADOS_ASISTENCIA, ORIGENES_ASISTENCIA } from '@/lib/asistencia'
 import { mensajeDeError } from '@/lib/errores'
 import { formatearFechaCorta, formatearHora, hoyIso } from '@/lib/fechas'
 import { cn } from '@/lib/utils'
-import {
-  crearJustificacion,
-  type EstadoJustificacion,
-} from '@/services/justificaciones'
+import { type EstadoJustificacion } from '@/services/justificaciones'
 import {
   listarHistorialHijo,
   obtenerMisHijos,
@@ -72,8 +52,6 @@ import {
 
 /** Registros por página en la tabla de historial. */
 const TAMANO = 15
-/** Mínimo del backend para el motivo de una justificación. */
-const MOTIVO_MIN = 10
 /** Meses que se ofrecen en el filtro (incluye el actual). */
 const MESES_FILTRO = 12
 
@@ -276,7 +254,6 @@ const columnas = (hoy: string, onJustificar: (registro: HistorialHijo) => void) 
  * justificación de faltas o tardanzas del día actual.
  */
 export function TutorAsistencia() {
-  const queryClient = useQueryClient()
   const hoy = hoyIso()
 
   const [hijoId, setHijoId] = useState<number | null>(null)
@@ -284,8 +261,6 @@ export function TutorAsistencia() {
   const [estado, setEstado] = useState<'' | HistorialHijo['estado']>('')
   const [pagina, setPagina] = useState(0)
   const [justificando, setJustificando] = useState<HistorialHijo | null>(null)
-  const [motivo, setMotivo] = useState('')
-  const [errorMotivo, setErrorMotivo] = useState<string | null>(null)
 
   const meses = useMemo(() => opcionesDeMeses(), [])
 
@@ -322,34 +297,6 @@ export function TutorAsistencia() {
     placeholderData: keepPreviousData,
   })
 
-  const justificar = useMutation({
-    mutationFn: crearJustificacion,
-    onSuccess: () => {
-      toast.success('Justificación enviada', {
-        description:
-          'El colegio revisará tu descargo y te notificará la respuesta.',
-      })
-      setJustificando(null)
-      setMotivo('')
-      setErrorMotivo(null)
-      void queryClient.invalidateQueries({
-        queryKey: ['tutor', 'historial-completo'],
-      })
-      void queryClient.invalidateQueries({ queryKey: ['tutor', 'historial'] })
-      void queryClient.invalidateQueries({ queryKey: ['tutor', 'resumen'] })
-    },
-    onError: (error) => {
-      const mensaje = mensajeDeError(
-        error,
-        'No se pudo enviar la justificación.',
-      )
-      setErrorMotivo(mensaje)
-      toast.error('No se pudo enviar la justificación', {
-        description: mensaje,
-      })
-    },
-  })
-
   const registros = consulta.data?.data ?? HISTORIAL_VACIO
   const total = consulta.data?.total ?? 0
   const cargando = consulta.isLoading
@@ -360,8 +307,6 @@ export function TutorAsistencia() {
     () =>
       columnas(hoy, (registro) => {
         setJustificando(registro)
-        setMotivo('')
-        setErrorMotivo(null)
       }),
     [hoy],
   )
@@ -404,38 +349,6 @@ export function TutorAsistencia() {
     setMes('')
     setEstado('')
     setPagina(0)
-  }
-
-  function cerrarJustificacion() {
-    setJustificando(null)
-    setMotivo('')
-    setErrorMotivo(null)
-  }
-
-  function enviarJustificacion(evento: FormEvent<HTMLFormElement>) {
-    evento.preventDefault()
-    if (!justificando) return
-
-    if (justificando.fecha !== hoy) {
-      const mensaje =
-        'Solo puedes enviar la justificación el mismo día de la falta o tardanza.'
-      setErrorMotivo(mensaje)
-      toast.error('No se pudo enviar la justificación', {
-        description: mensaje,
-      })
-      return
-    }
-
-    const texto = motivo.trim()
-    if (texto.length < MOTIVO_MIN) {
-      setErrorMotivo(
-        `Describe el motivo con al menos ${MOTIVO_MIN} caracteres.`,
-      )
-      return
-    }
-
-    setErrorMotivo(null)
-    justificar.mutate({ asistencia_id: justificando.id, motivo: texto })
   }
 
   return (
@@ -729,120 +642,15 @@ export function TutorAsistencia() {
         </Card>
       ) : null}
 
-      <Dialog
-        open={justificando !== null}
+      <JustificarModal
+        key={justificando?.id ?? 'sin-asistencia'}
+        abierto={justificando !== null}
         onOpenChange={(abierto) => {
-          if (!abierto) cerrarJustificacion()
+          if (!abierto) setJustificando(null)
         }}
-      >
-        <DialogContent>
-          <form className="space-y-4" onSubmit={enviarJustificacion} noValidate>
-            <DialogHeader>
-              <DialogTitle>Justificar inasistencia</DialogTitle>
-              <DialogDescription>
-                {justificando
-                  ? `${justificando.materia ?? 'Sin materia'} · ${formatearFechaCorta(justificando.fecha)}${
-                      rangoHorario(
-                        justificando.hora_inicio,
-                        justificando.hora_fin,
-                      )
-                        ? ` · ${rangoHorario(justificando.hora_inicio, justificando.hora_fin)}`
-                        : ''
-                    }`
-                  : ''}
-              </DialogDescription>
-            </DialogHeader>
-
-            {justificando && justificando.fecha !== hoy ? (
-              <p
-                role="alert"
-                className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
-              >
-                <AlertTriangle
-                  className="mt-0.5 size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                <span>
-                  Solo puedes justificar el mismo día de la falta o tardanza.
-                  Este registro es del{' '}
-                  {formatearFechaCorta(justificando.fecha)}.
-                </span>
-              </p>
-            ) : null}
-
-            <div className="grid gap-1.5">
-              <div className="flex items-baseline justify-between gap-2">
-                <Label htmlFor="motivo-justificacion">Motivo</Label>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {motivo.length}/500
-                </span>
-              </div>
-              <Textarea
-                id="motivo-justificacion"
-                value={motivo}
-                onChange={(evento) => {
-                  setMotivo(evento.target.value)
-                  setErrorMotivo(null)
-                }}
-                rows={4}
-                maxLength={500}
-                placeholder="Ej.: Cita médica programada en el Hospital del Niño."
-                aria-invalid={Boolean(errorMotivo)}
-                aria-describedby={
-                  errorMotivo ? 'error-motivo' : 'ayuda-motivo'
-                }
-                className="min-h-28"
-              />
-              {errorMotivo ? (
-                <p
-                  id="error-motivo"
-                  role="alert"
-                  className="flex items-start gap-1.5 text-sm text-destructive"
-                >
-                  <AlertTriangle
-                    className="mt-0.5 size-3.5 shrink-0"
-                    aria-hidden="true"
-                  />
-                  {errorMotivo}
-                </p>
-              ) : (
-                <p
-                  id="ayuda-motivo"
-                  className="text-xs text-muted-foreground"
-                >
-                  Mínimo {MOTIVO_MIN} caracteres. Solo puedes justificar el
-                  mismo día de la falta o tardanza.
-                </p>
-              )}
-            </div>
-
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button type="button" variant="outline">
-                  Cancelar
-                </Button>
-              </DialogClose>
-              <Button
-                type="submit"
-                disabled={
-                  justificar.isPending ||
-                  (justificando !== null && justificando.fecha !== hoy)
-                }
-              >
-                {justificar.isPending ? (
-                  <LoaderCircle
-                    className="size-4 animate-spin"
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <Send aria-hidden="true" />
-                )}
-                Enviar justificación
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+        asistencia={justificando}
+        estudiante={hijoActivo ? nombreCompleto(hijoActivo) : null}
+      />
     </DashboardShell>
   )
 }

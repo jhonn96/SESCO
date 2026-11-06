@@ -92,6 +92,19 @@ class QrResponse(APIModel):
     ventana_seg: int
     expira_en: datetime
     segundos_restantes: int
+    materia: str | None = Field(
+        default=None, description="Materia del bloque de clase en curso"
+    )
+    profesor: str | None = Field(
+        default=None,
+        description="Nombre completo del profesor que dicta la clase en curso",
+    )
+    hora_inicio: time | None = Field(
+        default=None, description="Hora de inicio del bloque en curso"
+    )
+    hora_fin: time | None = Field(
+        default=None, description="Hora de fin del bloque en curso"
+    )
 
 
 class EscaneoRequest(APIModel):

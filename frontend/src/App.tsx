@@ -16,12 +16,16 @@ import { Estudiantes } from '@/pages/Estudiantes'
 import { Horarios } from '@/pages/Horarios'
 import { Justificaciones } from '@/pages/Justificaciones'
 import { Login } from '@/pages/Login'
+import { ProfesorAlertas } from '@/pages/ProfesorAlertas'
 import { ProfesorDashboard } from '@/pages/ProfesorDashboard'
 import { ProfesorHorario } from '@/pages/ProfesorHorario'
+import { ProfesorListaAsistencia } from '@/pages/ProfesorListaAsistencia'
 import { Profesores } from '@/pages/Profesores'
 import { Reportes } from '@/pages/Reportes'
 import { TutorAsistencia } from '@/pages/TutorAsistencia'
 import { TutorDashboard } from '@/pages/TutorDashboard'
+import { TutorNotificaciones } from '@/pages/TutorNotificaciones'
+import { TutorReportes } from '@/pages/TutorReportes'
 import { Tutores } from '@/pages/Tutores'
 
 /** Lleva al inicio del rol autenticado (o al login si no hay sesión). */
@@ -61,7 +65,12 @@ export default function App() {
       </Route>
       <Route element={<ProtectedRoute rol="profesor" />}>
         <Route path="/profesor" element={<ProfesorDashboard />} />
+        <Route path="/profesor/alertas" element={<ProfesorAlertas />} />
         <Route path="/profesor/horario" element={<ProfesorHorario />} />
+        <Route
+          path="/profesor/lista-asistencia"
+          element={<ProfesorListaAsistencia />}
+        />
       </Route>
       <Route element={<ProtectedRoute rol="estudiante" />}>
         <Route path="/estudiante" element={<EstudianteDashboard />} />
@@ -69,6 +78,8 @@ export default function App() {
       <Route element={<ProtectedRoute rol="tutor" />}>
         <Route path="/tutor" element={<TutorDashboard />} />
         <Route path="/tutor/asistencia" element={<TutorAsistencia />} />
+        <Route path="/tutor/notificaciones" element={<TutorNotificaciones />} />
+        <Route path="/tutor/reportes" element={<TutorReportes />} />
       </Route>
 
       <Route element={<ProtectedRoute />}>

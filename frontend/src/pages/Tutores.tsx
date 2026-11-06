@@ -6,9 +6,18 @@ import {
   tableFeatures,
   useTable,
 } from '@tanstack/react-table'
-import { HeartHandshake, RefreshCw, Search, Undo2, UserPlus, X } from 'lucide-react'
+import {
+  HeartHandshake,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  Undo2,
+  UserPlus,
+  X,
+} from 'lucide-react'
 
 import { DashboardShell } from '@/components/DashboardShell'
+import { EstadoUsuarioDialog } from '@/components/EstadoUsuarioDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { TablaEstado } from '@/components/TablaEstado'
 import { TablaPaginacion } from '@/components/TablaPaginacion'
@@ -26,8 +35,10 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { mensajeDeError } from '@/lib/errores'
+import { estadoDeUsuario } from '@/lib/estado-usuario'
 import { inicialesPersona, nombreCompleto } from '@/lib/personas'
 import { cn } from '@/lib/utils'
+import type { Usuario } from '@/services/auth'
 import { listarTutores, type Tutor } from '@/services/tutores'
 
 const TAMANO = 10
@@ -37,21 +48,10 @@ const FEATURES = tableFeatures({ rowPaginationFeature })
 const helper = createColumnHelper<typeof FEATURES, Tutor>()
 const TUTORES_VACIOS: Tutor[] = []
 
-function estadoTutor(tutor: Tutor) {
-  if (!tutor.usuario) {
-    return { etiqueta: 'Sin usuario', variante: 'muted' as const }
-  }
-  if (!tutor.usuario.activo) {
-    return { etiqueta: 'Inactivo', variante: 'destructive' as const }
-  }
-  const bloqueo = tutor.usuario.bloqueado_hasta
-  if (bloqueo && new Date(bloqueo).getTime() > Date.now()) {
-    return { etiqueta: 'Bloqueado', variante: 'warning' as const }
-  }
-  return { etiqueta: 'Activo', variante: 'success' as const }
-}
-
-const columnas = (onVincular: (tutor: Tutor) => void) =>
+const columnas = (
+  onVincular: (tutor: Tutor) => void,
+  onGestionarEstado: (usuario: Usuario) => void,
+) =>
   helper.columns([
     helper.display({
       id: 'tutor',
@@ -92,24 +92,43 @@ const columnas = (onVincular: (tutor: Tutor) => void) =>
       id: 'estado',
       header: 'Estado',
       cell: ({ row }) => {
-        const estado = estadoTutor(row.original)
+        const estado = estadoDeUsuario(row.original.usuario)
         return <Badge variant={estado.variante}>{estado.etiqueta}</Badge>
       },
     }),
     helper.display({
       id: 'acciones',
       header: 'Acciones',
-      cell: ({ row }) => (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => onVincular(row.original)}
-        >
-          <UserPlus aria-hidden="true" />
-          Vincular
-        </Button>
-      ),
+      cell: ({ row }) => {
+        const nombre =
+          nombreCompleto(row.original.usuario) ||
+          `Tutor #${row.original.usuario_id}`
+        return (
+          <div className="flex items-center gap-1">
+            {row.original.usuario ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                aria-label={`Gestionar estado de ${nombre}`}
+                title="Gestionar cuenta"
+                onClick={() => onGestionarEstado(row.original.usuario!)}
+              >
+                <ShieldAlert aria-hidden="true" />
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onVincular(row.original)}
+            >
+              <UserPlus aria-hidden="true" />
+              Vincular
+            </Button>
+          </div>
+        )
+      },
     }),
   ])
 
@@ -119,6 +138,7 @@ export function Tutores() {
   const [pagina, setPagina] = useState(0)
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
   const [tutorAVincular, setTutorAVincular] = useState<Tutor | null>(null)
+  const [usuarioAEstado, setUsuarioAEstado] = useState<Usuario | null>(null)
 
   useEffect(() => {
     const temporizador = window.setTimeout(() => {
@@ -155,10 +175,13 @@ export function Tutores() {
 
   const columnasTabla = useMemo(
     () =>
-      columnas((tutor) => {
-        setTutorAVincular(tutor)
-        setDialogoAbierto(true)
-      }),
+      columnas(
+        (tutor) => {
+          setTutorAVincular(tutor)
+          setDialogoAbierto(true)
+        },
+        (usuario) => setUsuarioAEstado(usuario),
+      ),
     [],
   )
 
@@ -355,6 +378,17 @@ export function Tutores() {
         }}
         tutorInicial={tutorAVincular}
       />
+
+      {usuarioAEstado ? (
+        <EstadoUsuarioDialog
+          key={usuarioAEstado.id}
+          abierto
+          onOpenChange={(abierto) => {
+            if (!abierto) setUsuarioAEstado(null)
+          }}
+          usuario={usuarioAEstado}
+        />
+      ) : null}
     </DashboardShell>
   )
 }

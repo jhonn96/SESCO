@@ -134,6 +134,14 @@ export interface CodigoQrEstudiante {
   ventana_seg: number
   expira_en: string
   segundos_restantes: number
+  /** Materia del bloque de clase en curso. */
+  materia: string | null
+  /** Nombre completo del profesor que dicta la clase en curso. */
+  profesor: string | null
+  /** Hora de inicio del bloque en curso (HH:MM:SS). */
+  hora_inicio: string | null
+  /** Hora de fin del bloque en curso (HH:MM:SS). */
+  hora_fin: string | null
 }
 
 /** GET /api/asistencia/qr: QR dinámico del estudiante autenticado. */

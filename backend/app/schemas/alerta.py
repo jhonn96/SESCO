@@ -7,8 +7,9 @@ from datetime import date, datetime
 from pydantic import Field
 
 from app.schemas.common import APIModel
+from app.schemas.curso import CursoResponse
 from app.schemas.enums import TipoAlerta
-from app.schemas.estudiante import EstudianteResumen
+from app.schemas.estudiante import EstudianteResumen, TutorACargoResponse
 
 
 class AlertaResponse(APIModel):
@@ -46,3 +47,42 @@ class GeneracionAlertasResponse(APIModel):
     semana_inicio: date
     semana_fin: date
     umbral_inasistencia_pct: float
+
+
+class EstudianteRiesgoResponse(APIModel):
+    """Estudiante que alcanza los umbrales de alerta en los cursos del docente."""
+
+    estudiante_id: int
+    nombres: str
+    apellidos: str
+    ci: str
+    curso_id: int
+    curso: CursoResponse
+    faltas_consecutivas: int
+    tardanzas_mes: int
+    umbral_faltas: int
+    umbral_tardanzas: int
+    motivos: list[str] = Field(default_factory=list)
+    tutor: TutorACargoResponse | None = None
+
+
+class RiesgoProfesorResponse(APIModel):
+    """Estudiantes en riesgo de los cursos asignados al profesor autenticado."""
+
+    generado_en: datetime
+    fecha: date
+    umbral_faltas: int
+    umbral_tardanzas: int
+    total_estudiantes: int
+    estudiantes: list[EstudianteRiesgoResponse] = Field(default_factory=list)
+
+
+class NotificacionTutorResponse(APIModel):
+    """Resultado del aviso manual del profesor al tutor principal."""
+
+    notificacion_id: int
+    estudiante_id: int
+    tutor_id: int
+    tutor_nombre: str
+    mensaje: str
+    creada: bool

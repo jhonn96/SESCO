@@ -43,6 +43,45 @@ class UsuarioUpdate(APIModel):
     activo: bool | None = None
 
 
+class UsuarioEstadoUpdate(APIModel):
+    """Cambio de estado de una cuenta.
+
+    Enviar ``bloqueado_hasta: null`` desbloquea la cuenta y reinicia
+    ``intentos_fallidos``. Una fecha futura la bloquea hasta ese momento.
+    """
+
+    activo: bool | None = Field(
+        default=None, description="Activa o desactiva la cuenta"
+    )
+    bloqueado_hasta: datetime | None = Field(
+        default=None,
+        description=(
+            "Fecha futura para bloquear la cuenta; null para desbloquearla"
+        ),
+    )
+
+
+class UsuarioPasswordUpdate(APIModel):
+    """Cambio de contraseña por el propio usuario autenticado."""
+
+    password_actual: str = Field(
+        min_length=1,
+        max_length=72,
+        description="Contraseña vigente, para confirmar la identidad",
+    )
+    password_nueva: str = Field(
+        min_length=8,
+        max_length=72,
+        description="Contraseña nueva; se hashea antes de persistir",
+    )
+
+
+class PasswordActualizadaResponse(APIModel):
+    """Confirmación del cambio de contraseña propio."""
+
+    mensaje: str
+
+
 class UsuarioResponse(UsuarioBase):
     id: int
     activo: bool
@@ -52,6 +91,13 @@ class UsuarioResponse(UsuarioBase):
     rol: RolResponse | None = Field(
         default=None, description="Se incluye cuando la relación está cargada"
     )
+
+
+class PasswordRestablecidaResponse(APIModel):
+    """Resultado del restablecimiento administrativo de contraseña."""
+
+    usuario: UsuarioResponse
+    password_temporal: str
 
 
 class DisponibilidadCI(APIModel):

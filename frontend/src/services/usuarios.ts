@@ -46,6 +46,58 @@ export function crearUsuario(datos: NuevoUsuario): Promise<Usuario> {
   return api.post<Usuario>('/usuarios', datos)
 }
 
+export interface CambioEstadoUsuario {
+  activo?: boolean
+  /** Fecha ISO futura para bloquear; `null` desbloquea y reinicia intentos. */
+  bloqueado_hasta?: string | null
+}
+
+/** PATCH /api/usuarios/{id}/estado (solo Director). */
+export function cambiarEstadoUsuario(
+  usuarioId: number,
+  datos: CambioEstadoUsuario,
+): Promise<Usuario> {
+  return api.patch<Usuario>(`/usuarios/${usuarioId}/estado`, datos)
+}
+
+/** PATCH /api/usuarios/{id}/desbloquear: quita el bloqueo y reinicia intentos. */
+export function desbloquearUsuario(usuarioId: number): Promise<Usuario> {
+  return api.patch<Usuario>(`/usuarios/${usuarioId}/desbloquear`)
+}
+
+export interface CambioPassword {
+  password_actual: string
+  password_nueva: string
+}
+
+export interface PasswordActualizada {
+  mensaje: string
+}
+
+export interface PasswordRestablecida {
+  usuario: Usuario
+  password_temporal: string
+}
+
+/** Contraseña asignada por el restablecimiento administrativo. */
+export const PASSWORD_TEMPORAL = 'Sesco2026!'
+
+/** PUT /api/usuarios/mi-password: cambio de contraseña del propio usuario. */
+export function cambiarMiPassword(
+  datos: CambioPassword,
+): Promise<PasswordActualizada> {
+  return api.put<PasswordActualizada>('/usuarios/mi-password', datos)
+}
+
+/** PATCH /api/usuarios/{id}/reset-password (solo Director). */
+export function restablecerPasswordUsuario(
+  usuarioId: number,
+): Promise<PasswordRestablecida> {
+  return api.patch<PasswordRestablecida>(
+    `/usuarios/${usuarioId}/reset-password`,
+  )
+}
+
 /** DELETE /api/usuarios/{id} (solo Director). */
 export function eliminarUsuario(usuarioId: number): Promise<void> {
   return api.delete(`/usuarios/${usuarioId}`)

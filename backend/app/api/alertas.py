@@ -11,9 +11,14 @@ from datetime import date
 
 from fastapi import APIRouter, Query, Request, Response, status
 
-from app.api.deps import CurrentDirector, DbSession
+from app.api.deps import CurrentDirector, CurrentProfesor, DbSession
 from app.models import Alerta
-from app.schemas.alerta import AlertaResponse, GeneracionAlertasResponse
+from app.schemas.alerta import (
+    AlertaResponse,
+    GeneracionAlertasResponse,
+    NotificacionTutorResponse,
+    RiesgoProfesorResponse,
+)
 from app.schemas.enums import TipoAlerta
 from app.services import alerta_service
 
@@ -67,6 +72,56 @@ def generar_alertas(
         semana_inicio=resultado.semana_inicio,
         semana_fin=resultado.semana_fin,
         umbral_inasistencia_pct=resultado.umbral_inasistencia_pct,
+    )
+
+
+@router.get(
+    "/profesor",
+    response_model=RiesgoProfesorResponse,
+    summary="Estudiantes en riesgo de mis cursos (solo Profesor)",
+    description=(
+        "Calcula en tiempo real los estudiantes de los cursos asignados al "
+        "docente que alcanzan el umbral de 3 faltas consecutivas o 5 tardanzas "
+        "en el mes, con el tutor principal de cada uno."
+    ),
+)
+def listar_riesgo_profesor(
+    db: DbSession,
+    profesor: CurrentProfesor,
+    fecha: date | None = Query(
+        default=None,
+        description="Fecha de corte; por defecto, hoy en la zona del colegio",
+    ),
+) -> RiesgoProfesorResponse:
+    return alerta_service.riesgo_profesor(
+        db,
+        profesor_id=profesor.id,
+        hasta=fecha,
+    )
+
+
+@router.post(
+    "/estudiantes/{estudiante_id}/notificar-tutor",
+    response_model=NotificacionTutorResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Notificar al tutor de un estudiante (solo Profesor)",
+    description=(
+        "Inserta una notificación en la cola del tutor principal confirmado "
+        "del estudiante. El docente debe tener asignado el curso del estudiante."
+    ),
+)
+def notificar_tutor(
+    estudiante_id: int,
+    db: DbSession,
+    profesor: CurrentProfesor,
+    request: Request,
+) -> NotificacionTutorResponse:
+    return alerta_service.notificar_tutor(
+        db,
+        estudiante_id=estudiante_id,
+        profesor_id=profesor.id,
+        usuario_id=profesor.id,
+        ip=_ip(request),
     )
 
 

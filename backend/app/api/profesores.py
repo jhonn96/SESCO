@@ -15,6 +15,7 @@ from app.schemas.asistencia import AsistenciaResponse
 from app.schemas.curso import CursoResponse
 from app.schemas.estudiante import EstudianteResponse
 from app.schemas.horario import ClaseActualResponse, HorarioResponse
+from app.schemas.lista_asistencia import ListaAsistenciaResponse
 from app.schemas.profesor import ProfesorCreate, ProfesorResponse, ProfesorUpdate
 from app.services import (
     asistencia_service,
@@ -107,8 +108,8 @@ def listar_mis_cursos(
     response_model=list[HorarioResponse],
     summary="Horario semanal del profesor autenticado (solo Profesor)",
     description=(
-        "Devuelve todos los bloques de la semana de los cursos asignados al "
-        "docente autenticado, ordenados por día y hora. Se usa en la vista "
+        "Devuelve todos los bloques de la semana asignados al docente "
+        "autenticado, ordenados por día y hora. Se usa en la vista "
         "«Mi horario»."
     ),
 )
@@ -123,8 +124,8 @@ def listar_mi_horario(
     response_model=list[HorarioResponse],
     summary="Bloques de clase en curso (solo Profesor)",
     description=(
-        "Bloques del día actual que están en curso en los cursos asignados al "
-        "profesor autenticado. Sirve para avisar antes de abrir el registro manual."
+        "Bloques del día actual que están en curso y asignados al profesor "
+        "autenticado. Sirve para avisar antes de abrir el registro manual."
     ),
 )
 def listar_bloques_vigentes(
@@ -138,10 +139,10 @@ def listar_bloques_vigentes(
     response_model=list[HorarioResponse],
     summary="Bloques de hoy del profesor (solo Profesor)",
     description=(
-        "Devuelve los bloques del día actual (según el día de la semana) de "
-        "los cursos asignados al docente autenticado. Se usa para construir "
-        "los filtros por curso y materia sin depender de que ya existan "
-        "registros de asistencia."
+        "Devuelve los bloques del día actual (según el día de la semana) "
+        "asignados al docente autenticado. Se usa para construir los filtros "
+        "por curso y materia sin depender de que ya existan registros de "
+        "asistencia."
     ),
 )
 def listar_bloques_hoy(
@@ -181,8 +182,8 @@ def obtener_clase_actual(
     description=(
         "Devuelve todos los registros del día actual de los cursos asignados "
         "al docente autenticado. Se puede acotar por ``curso_id`` o "
-        "``materia_id``. La relación docente-curso se resuelve con "
-        "``profesor_curso``."
+        "``materia_id``. La relación docente-bloque se resuelve con "
+        "``horario.profesor_id``."
     ),
 )
 def listar_mis_registros_hoy(
@@ -203,12 +204,39 @@ def listar_mis_registros_hoy(
 
 
 @router.get(
+    "/lista-asistencia",
+    response_model=ListaAsistenciaResponse,
+    summary="Lista mensual de asistencia de un curso y materia (solo Profesor)",
+    description=(
+        "Devuelve la matriz del mes para un curso y materia que el docente "
+        "autenticado tenga asignados en su horario. Incluye todos los "
+        "estudiantes del curso ordenados por apellidos y los estados de "
+        "asistencia por día."
+    ),
+)
+def obtener_lista_asistencia(
+    db: DbSession,
+    profesor: CurrentProfesor,
+    curso_id: int = Query(ge=1),
+    materia_id: int = Query(ge=1),
+    mes: str = Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+) -> ListaAsistenciaResponse:
+    return asistencia_service.lista_mensual_de_profesor(
+        db,
+        profesor.id,
+        curso_id=curso_id,
+        materia_id=materia_id,
+        mes=mes,
+    )
+
+
+@router.get(
     "/{usuario_id}/horario",
     response_model=list[HorarioResponse],
     summary="Horario semanal de un profesor (solo Director)",
     description=(
-        "Devuelve todos los bloques de la semana de los cursos asignados al "
-        "profesor indicado en ``profesor_curso``. Se usa en la acción rápida "
+        "Devuelve todos los bloques de la semana asignados al profesor "
+        "indicado en ``horario.profesor_id``. Se usa en la acción rápida "
         "«Ver Horario» del directorio docente."
     ),
 )

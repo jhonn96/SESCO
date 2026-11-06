@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from app.models.asistencia import Asistencia
     from app.models.curso import Curso
     from app.models.materia import Materia
+    from app.models.profesor import Profesor
 
 
 class Horario(Base):
@@ -40,11 +41,15 @@ class Horario(Base):
         ),
         Index("ix_horario_curso", "curso_id"),
         Index("ix_horario_curso_dia", "curso_id", "dia_semana"),
+        Index("ix_horario_profesor_dia", "profesor_id", "dia_semana"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     curso_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("curso.id"), nullable=False)
     materia_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("materia.id"), nullable=False)
+    profesor_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("profesor.usuario_id"), nullable=False
+    )
     dia_semana: Mapped[str] = mapped_column(
         String(10), nullable=False, server_default=text("'lunes'")
     )
@@ -56,6 +61,7 @@ class Horario(Base):
 
     curso: Mapped[Curso] = relationship(back_populates="horarios")
     materia: Mapped[Materia] = relationship(back_populates="horarios")
+    profesor: Mapped[Profesor] = relationship()
     asistencias: Mapped[list[Asistencia]] = relationship(
         back_populates="horario", passive_deletes=True
     )

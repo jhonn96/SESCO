@@ -6,7 +6,8 @@ Reglas críticas para la asistencia:
   Los intervalos son semiabiertos: un bloque 08:00-09:30 y otro 09:30-11:00 son
   válidos el mismo día.
 - Como máximo un ``es_ultimo_bloque`` por curso y día (cierre de jornada).
-- La materia y el curso deben existir.
+- Un profesor no puede dictar dos cursos a la misma hora del mismo día.
+- La materia, el curso y el profesor deben existir.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.exceptions import Conflicto, NoEncontrado, ReglaNegocio, traducir_integridad
-from app.models import Asistencia, Curso, Estudiante, Horario, Materia, ProfesorCurso
+from app.models import Asistencia, Curso, Estudiante, Horario, Materia, Profesor
 from app.schemas.enums import DiaSemana
 from app.schemas.horario import HorarioCreate, HorarioUpdate
 from app.services import qr_service
@@ -64,7 +65,11 @@ def bloque_para_qr(
 
     horarios = db.scalars(
         select(Horario)
-        .options(joinedload(Horario.materia), joinedload(Horario.curso))
+        .options(
+            joinedload(Horario.materia),
+            joinedload(Horario.curso),
+            joinedload(Horario.profesor).joinedload(Profesor.usuario),
+        )
         .where(Horario.curso_id == curso_id, Horario.dia_semana == dia)
         .order_by(Horario.hora_inicio)
     ).all()
@@ -79,15 +84,16 @@ def bloque_para_qr(
 
 
 def bloques_de_profesor(db: Session, profesor_id: int) -> list[Horario]:
-    """Todos los bloques semanales de los cursos asignados al profesor."""
-    cursos = select(ProfesorCurso.curso_id).where(
-        ProfesorCurso.profesor_id == profesor_id
-    )
+    """Todos los bloques semanales que dicta el profesor."""
     return list(
         db.scalars(
             select(Horario)
-            .options(joinedload(Horario.materia), joinedload(Horario.curso))
-            .where(Horario.curso_id.in_(cursos))
+            .options(
+                joinedload(Horario.materia),
+                joinedload(Horario.curso),
+                joinedload(Horario.profesor).joinedload(Profesor.usuario),
+            )
+            .where(Horario.profesor_id == profesor_id)
             .order_by(ORDEN_DIAS, Horario.hora_inicio, Horario.curso_id)
         )
     )
@@ -99,7 +105,7 @@ def bloques_hoy_de_profesor(
     *,
     momento: datetime | None = None,
 ) -> list[Horario]:
-    """Bloques del día actual de los cursos asignados a un profesor.
+    """Bloques del día actual que dicta un profesor.
 
     Se filtra por ``dia_semana`` de la fecha del colegio: un bloque del lunes
     no debe aparecer en los registros del martes aunque la tabla de asistencia
@@ -111,15 +117,16 @@ def bloques_hoy_de_profesor(
     if dia is None:
         return []
 
-    cursos = select(ProfesorCurso.curso_id).where(
-        ProfesorCurso.profesor_id == profesor_id
-    )
     return list(
         db.scalars(
             select(Horario)
-            .options(joinedload(Horario.materia), joinedload(Horario.curso))
+            .options(
+                joinedload(Horario.materia),
+                joinedload(Horario.curso),
+                joinedload(Horario.profesor).joinedload(Profesor.usuario),
+            )
             .where(
-                Horario.curso_id.in_(cursos),
+                Horario.profesor_id == profesor_id,
                 Horario.dia_semana == dia,
             )
             .order_by(Horario.curso_id, Horario.hora_inicio)
@@ -133,12 +140,10 @@ def bloques_vigentes_de_profesor(
     *,
     momento: datetime | None = None,
 ) -> list[Horario]:
-    """Bloques en curso de los cursos asignados a un profesor.
+    """Bloques en curso que dicta un profesor.
 
-    ``horario`` no guarda el docente: la relación llega por
-    ``profesor_curso``. Se considera vigente el bloque del día actual cuyo
-    rango contiene la hora (intervalo semiabierto ``hora_inicio <= ahora <
-    hora_fin``).
+    Se considera vigente el bloque del día actual cuyo rango contiene la hora
+    (intervalo semiabierto ``hora_inicio <= ahora < hora_fin``).
     """
     instante = momento or qr_service.ahora_local()
     hora = instante.timetz().replace(tzinfo=None)
@@ -194,6 +199,7 @@ def _cargar(db: Session, horario_id: int) -> Horario | None:
         .options(
             joinedload(Horario.materia),
             joinedload(Horario.curso),
+            joinedload(Horario.profesor).joinedload(Profesor.usuario),
         )
         .where(Horario.id == horario_id)
     )
@@ -204,6 +210,7 @@ def listar(
     *,
     curso_id: int | None = None,
     materia_id: int | None = None,
+    profesor_id: int | None = None,
     dia_semana: DiaSemana | None = None,
     es_ultimo_bloque: bool | None = None,
     skip: int = 0,
@@ -214,6 +221,8 @@ def listar(
         condiciones.append(Horario.curso_id == curso_id)
     if materia_id is not None:
         condiciones.append(Horario.materia_id == materia_id)
+    if profesor_id is not None:
+        condiciones.append(Horario.profesor_id == profesor_id)
     if dia_semana is not None:
         condiciones.append(Horario.dia_semana == dia_semana.value)
     if es_ultimo_bloque is not None:
@@ -223,7 +232,11 @@ def listar(
     items = list(
         db.scalars(
             select(Horario)
-            .options(joinedload(Horario.materia), joinedload(Horario.curso))
+            .options(
+                joinedload(Horario.materia),
+                joinedload(Horario.curso),
+                joinedload(Horario.profesor).joinedload(Profesor.usuario),
+            )
             .where(*condiciones)
             .order_by(Horario.curso_id, ORDEN_DIAS, Horario.hora_inicio)
             .offset(skip)
@@ -292,6 +305,50 @@ def _validar_solapamiento(
         )
 
 
+def _obtener_profesor(db: Session, profesor_id: int) -> Profesor:
+    profesor = db.scalar(
+        select(Profesor)
+        .options(joinedload(Profesor.usuario))
+        .where(Profesor.usuario_id == profesor_id)
+    )
+    if profesor is None:
+        raise NoEncontrado(f"No existe el profesor {profesor_id}")
+    return profesor
+
+
+def _nombre_profesor(profesor: Profesor) -> str:
+    if profesor.usuario is None:
+        return f"#{profesor.usuario_id}"
+    return f"{profesor.usuario.nombres} {profesor.usuario.apellidos}".strip()
+
+
+def _validar_choque_profesor(
+    db: Session,
+    *,
+    profesor: Profesor,
+    curso_id: int,
+    dia_semana: str,
+    hora_inicio: time,
+    hora_fin: time,
+    excluir_id: int | None = None,
+) -> None:
+    """Impide que un profesor dicte dos cursos en el mismo horario."""
+    stmt = select(Horario.id).where(
+        Horario.profesor_id == profesor.usuario_id,
+        Horario.dia_semana == dia_semana,
+        Horario.curso_id != curso_id,
+        Horario.hora_inicio < hora_fin,
+        Horario.hora_fin > hora_inicio,
+    )
+    if excluir_id is not None:
+        stmt = stmt.where(Horario.id != excluir_id)
+    if db.scalar(stmt.limit(1)) is not None:
+        raise Conflicto(
+            f"El profesor {_nombre_profesor(profesor)} ya tiene una clase asignada "
+            "en otro curso a esta misma hora."
+        )
+
+
 def _validar_bloque_cierre(
     db: Session, *, curso_id: int, dia_semana: str, excluir_id: int | None = None
 ) -> None:
@@ -311,11 +368,20 @@ def _validar_bloque_cierre(
 
 def crear(db: Session, datos: HorarioCreate) -> Horario:
     _validar_curso_y_materia(db, datos.curso_id, datos.materia_id)
+    profesor = _obtener_profesor(db, datos.profesor_id)
     if datos.hora_fin <= datos.hora_inicio:
         raise ReglaNegocio("hora_fin debe ser posterior a hora_inicio")
     dia_semana = datos.dia_semana.value
     _validar_solapamiento(
         db,
+        curso_id=datos.curso_id,
+        dia_semana=dia_semana,
+        hora_inicio=datos.hora_inicio,
+        hora_fin=datos.hora_fin,
+    )
+    _validar_choque_profesor(
+        db,
+        profesor=profesor,
         curso_id=datos.curso_id,
         dia_semana=dia_semana,
         hora_inicio=datos.hora_inicio,
@@ -327,6 +393,7 @@ def crear(db: Session, datos: HorarioCreate) -> Horario:
     horario = Horario(
         curso_id=datos.curso_id,
         materia_id=datos.materia_id,
+        profesor_id=datos.profesor_id,
         dia_semana=dia_semana,
         hora_inicio=datos.hora_inicio,
         hora_fin=datos.hora_fin,
@@ -340,7 +407,7 @@ def crear(db: Session, datos: HorarioCreate) -> Horario:
         raise traducir_integridad(
             exc,
             duplicado="Datos duplicados",
-            referencia="El curso o la materia indicada no existe",
+            referencia="El curso, la materia o el profesor indicado no existe",
         ) from exc
     return obtener(db, horario.id)
 
@@ -355,6 +422,7 @@ def actualizar(db: Session, horario_id: int, datos: HorarioUpdate) -> Horario:
 
     curso_id = cambios.get("curso_id", horario.curso_id)
     materia_id = cambios.get("materia_id", horario.materia_id)
+    profesor_id = cambios.get("profesor_id", horario.profesor_id)
     dia_semana = cambios.get("dia_semana", horario.dia_semana)
     if isinstance(dia_semana, DiaSemana):
         dia_semana = dia_semana.value
@@ -363,10 +431,20 @@ def actualizar(db: Session, horario_id: int, datos: HorarioUpdate) -> Horario:
     es_ultimo = cambios.get("es_ultimo_bloque", horario.es_ultimo_bloque)
 
     _validar_curso_y_materia(db, curso_id, materia_id)
+    profesor = _obtener_profesor(db, profesor_id)
     if hora_fin <= hora_inicio:
         raise ReglaNegocio("hora_fin debe ser posterior a hora_inicio")
     _validar_solapamiento(
         db,
+        curso_id=curso_id,
+        dia_semana=dia_semana,
+        hora_inicio=hora_inicio,
+        hora_fin=hora_fin,
+        excluir_id=horario.id,
+    )
+    _validar_choque_profesor(
+        db,
+        profesor=profesor,
         curso_id=curso_id,
         dia_semana=dia_semana,
         hora_inicio=hora_inicio,
@@ -389,7 +467,7 @@ def actualizar(db: Session, horario_id: int, datos: HorarioUpdate) -> Horario:
         raise traducir_integridad(
             exc,
             duplicado="Datos duplicados",
-            referencia="El curso o la materia indicada no existe",
+            referencia="El curso, la materia o el profesor indicado no existe",
         ) from exc
     return obtener(db, horario.id)
 

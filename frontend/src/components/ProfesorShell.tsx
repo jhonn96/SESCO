@@ -1,17 +1,19 @@
 import type { ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
+  BellRing,
   CalendarDays,
   ClipboardList,
   GraduationCap,
   LayoutDashboard,
-  LogOut,
+  ListChecks,
   QrCode,
   UserPlus,
 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 
+import { MenuUsuario } from '@/components/MenuUsuario'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -73,7 +75,7 @@ export function ProfesorShell({
 
   return (
     <SidebarProvider>
-      <Sidebar collapsible="icon">
+      <Sidebar collapsible="icon" className="print:hidden">
         <SidebarHeader className="border-b border-sidebar-border/70 p-3">
           <SidebarMenu>
             <SidebarMenuItem>
@@ -107,33 +109,11 @@ export function ProfesorShell({
         <SidebarFooter className="border-t border-sidebar-border/70 p-3">
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton
-                size="lg"
-                tooltip="Cerrar sesión"
-                onClick={manejarCierre}
-                aria-label="Cerrar sesión"
-                className="h-auto py-2.5"
-              >
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                  {usuario
-                    ? `${usuario.nombres[0] ?? ''}${usuario.apellidos[0] ?? ''}`.toUpperCase()
-                    : 'PR'}
-                </span>
-                <div className="grid flex-1 text-left leading-tight">
-                  <span className="truncate text-sm font-semibold">
-                    {usuario
-                      ? `${usuario.nombres} ${usuario.apellidos}`.trim()
-                      : 'Usuario'}
-                  </span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {rol ? ETIQUETA_ROL[rol] : 'Profesor'}
-                  </span>
-                </div>
-                <LogOut
-                  className="ml-auto size-4! shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-              </SidebarMenuButton>
+              <MenuUsuario
+                usuario={usuario}
+                rol={rol ? ETIQUETA_ROL[rol] : 'Profesor'}
+                onCerrarSesion={manejarCierre}
+              />
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarFooter>
@@ -141,10 +121,10 @@ export function ProfesorShell({
         <SidebarRail />
       </Sidebar>
 
-      <SidebarInset>
+      <SidebarInset className="print:m-0 print:rounded-none print:shadow-none">
         <header
           data-slot="dashboard-header"
-          className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-border/70 bg-background/80 px-4 backdrop-blur lg:px-8"
+          className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-border/70 bg-background/80 px-4 backdrop-blur lg:px-8 print:hidden"
         >
           <SidebarTrigger size="icon" className="-ml-1" />
           <Separator orientation="vertical" className="h-6" />
@@ -166,7 +146,7 @@ export function ProfesorShell({
 
         <div
           data-slot="dashboard-content"
-          className="flex w-full flex-1 flex-col gap-8 p-4 sm:p-6 lg:p-8"
+          className="flex w-full flex-1 flex-col gap-8 p-4 sm:p-6 lg:p-8 print:gap-0 print:p-0"
         >
           {children}
         </div>
@@ -195,6 +175,8 @@ function MenuProfesor({
 
   const enPanel = pathname === '/profesor' && hash !== '#registros'
   const enRegistros = pathname === '/profesor' && hash === '#registros'
+  const enLista = pathname === '/profesor/lista-asistencia'
+  const enAlertas = pathname === '/profesor/alertas'
   const enHorario = pathname === '/profesor/horario'
   const muestraAcciones = Boolean(onEscanear || onRegistroManual)
 
@@ -236,6 +218,40 @@ function MenuProfesor({
                 >
                   <ClipboardList aria-hidden="true" />
                   <span>Registros de hoy</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={enLista}
+                tooltip="Lista de asistencia"
+              >
+                <Link
+                  to="/profesor/lista-asistencia"
+                  onClick={cerrarMenuMovil}
+                  aria-current={enLista ? 'page' : undefined}
+                >
+                  <ListChecks aria-hidden="true" />
+                  <span>Lista de asistencia</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={enAlertas}
+                tooltip="Alertas"
+              >
+                <Link
+                  to="/profesor/alertas"
+                  onClick={cerrarMenuMovil}
+                  aria-current={enAlertas ? 'page' : undefined}
+                >
+                  <BellRing aria-hidden="true" />
+                  <span>Alertas</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

@@ -13,12 +13,14 @@ import {
   Plus,
   RefreshCw,
   Search,
+  ShieldAlert,
   Undo2,
   X,
 } from 'lucide-react'
 
 import { DashboardShell } from '@/components/DashboardShell'
 import { EditarProfesorDialog } from '@/components/EditarProfesorDialog'
+import { EstadoUsuarioDialog } from '@/components/EstadoUsuarioDialog'
 import { NuevoProfesorDialog } from '@/components/NuevoProfesorDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { ProfesorHorarioDialog } from '@/components/ProfesorHorarioDialog'
@@ -37,9 +39,11 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { mensajeDeError } from '@/lib/errores'
+import { estadoDeUsuario } from '@/lib/estado-usuario'
 import { formatearFecha } from '@/lib/fechas'
 import { inicialesPersona, nombreCompleto } from '@/lib/personas'
 import { cn } from '@/lib/utils'
+import type { Usuario } from '@/services/auth'
 import { listarProfesores, type Profesor } from '@/services/profesores'
 
 const TAMANO = 10
@@ -49,23 +53,10 @@ const FEATURES = tableFeatures({ rowPaginationFeature })
 const helper = createColumnHelper<typeof FEATURES, Profesor>()
 const PROFESORES_VACIOS: Profesor[] = []
 
-function estadoProfesor(profesor: Profesor) {
-  if (!profesor.usuario) {
-    return { etiqueta: 'Sin usuario', variante: 'muted' as const }
-  }
-  if (!profesor.usuario.activo) {
-    return { etiqueta: 'Inactivo', variante: 'destructive' as const }
-  }
-  const bloqueo = profesor.usuario.bloqueado_hasta
-  if (bloqueo && new Date(bloqueo).getTime() > Date.now()) {
-    return { etiqueta: 'Bloqueado', variante: 'warning' as const }
-  }
-  return { etiqueta: 'Activo', variante: 'success' as const }
-}
-
 const columnas = (
   onEditar: (profesor: Profesor) => void,
   onVerHorario: (profesor: Profesor) => void,
+  onGestionarEstado: (usuario: Usuario) => void,
 ) =>
   helper.columns([
     helper.display({
@@ -125,7 +116,7 @@ const columnas = (
       id: 'estado',
       header: 'Estado',
       cell: ({ row }) => {
-        const estado = estadoProfesor(row.original)
+        const estado = estadoDeUsuario(row.original.usuario)
         return <Badge variant={estado.variante}>{estado.etiqueta}</Badge>
       },
     }),
@@ -138,6 +129,18 @@ const columnas = (
           `Profesor #${row.original.usuario_id}`
         return (
           <div className="flex items-center gap-1">
+            {row.original.usuario ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                aria-label={`Gestionar estado de ${nombre}`}
+                title="Gestionar estado"
+                onClick={() => onGestionarEstado(row.original.usuario!)}
+              >
+                <ShieldAlert aria-hidden="true" />
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"
@@ -172,6 +175,7 @@ export function Profesores() {
   const [profesorAEditar, setProfesorAEditar] = useState<Profesor | null>(null)
   const [profesorConHorario, setProfesorConHorario] =
     useState<Profesor | null>(null)
+  const [usuarioAEstado, setUsuarioAEstado] = useState<Usuario | null>(null)
 
   useEffect(() => {
     const temporizador = window.setTimeout(() => {
@@ -211,6 +215,7 @@ export function Profesores() {
       columnas(
         (profesor) => setProfesorAEditar(profesor),
         (profesor) => setProfesorConHorario(profesor),
+        (usuario) => setUsuarioAEstado(usuario),
       ),
     [],
   )
@@ -421,6 +426,17 @@ export function Profesores() {
             if (!abierto) setProfesorConHorario(null)
           }}
           profesor={profesorConHorario}
+        />
+      ) : null}
+
+      {usuarioAEstado ? (
+        <EstadoUsuarioDialog
+          key={usuarioAEstado.id}
+          abierto
+          onOpenChange={(abierto) => {
+            if (!abierto) setUsuarioAEstado(null)
+          }}
+          usuario={usuarioAEstado}
         />
       ) : null}
     </DashboardShell>

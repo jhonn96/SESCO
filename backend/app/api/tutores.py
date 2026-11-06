@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import CurrentDirector, CurrentTutor, DbSession
@@ -68,8 +70,9 @@ def resumen_hijo(
     description=(
         "Historial paginado de asistencia del hijo con su materia, horario, "
         "origen y la justificación asociada (si ya existe). Filtros opcionales "
-        "por mes (``YYYY-MM``) y estado. El total se expone en la cabecera "
-        "``X-Total-Count``. Solo para el tutor confirmado."
+        "por mes (``YYYY-MM``), rango de fechas (``desde``/``hasta``) y estado. "
+        "El total se expone en la cabecera ``X-Total-Count``. Solo para el "
+        "tutor confirmado."
     ),
 )
 def historial_hijo(
@@ -83,6 +86,12 @@ def historial_hijo(
         description="Mes a filtrar en formato YYYY-MM",
         examples=["2026-10"],
     ),
+    desde: date | None = Query(
+        default=None, description="Fecha inicial del rango (inclusive)"
+    ),
+    hasta: date | None = Query(
+        default=None, description="Fecha final del rango (inclusive)"
+    ),
     estado: EstadoAsistencia | None = Query(
         default=None, description="Estado de asistencia a filtrar"
     ),
@@ -94,6 +103,8 @@ def historial_hijo(
         tutor.id,
         estudiante_id,
         mes=mes,
+        desde=desde,
+        hasta=hasta,
         estado=estado.value if estado else None,
         skip=skip,
         limit=limit,

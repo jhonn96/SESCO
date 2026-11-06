@@ -12,7 +12,6 @@ import {
   GraduationCap,
   HeartHandshake,
   LayoutDashboard,
-  LogOut,
   Megaphone,
   School,
   Settings,
@@ -36,6 +35,7 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar'
+import { MenuUsuario } from '@/components/MenuUsuario'
 import { ETIQUETA_ROL, rutaPorRol, type RolNombre } from '@/lib/roles'
 import type { Usuario } from '@/services/auth'
 
@@ -128,6 +128,7 @@ const MENU_POR_ROL: Record<RolNombre, GrupoMenu[]> = {
       titulo: 'Principal',
       items: [
         { titulo: 'Panel', icono: LayoutDashboard, ruta: '/profesor' },
+        { titulo: 'Alertas', icono: BellRing, ruta: '/profesor/alertas' },
         { titulo: 'Mis cursos', icono: BookOpen },
         { titulo: 'Asistencia', icono: CalendarCheck2 },
         { titulo: 'Estudiantes', icono: Users },
@@ -162,12 +163,18 @@ const MENU_POR_ROL: Record<RolNombre, GrupoMenu[]> = {
           icono: ClipboardList,
           ruta: '/tutor/asistencia',
         },
-        { titulo: 'Notificaciones', icono: Bell },
+        {
+          titulo: 'Notificaciones',
+          icono: Bell,
+          ruta: '/tutor/notificaciones',
+        },
       ],
     },
     {
       titulo: 'Seguimiento',
-      items: [{ titulo: 'Reportes', icono: BarChart3 }],
+      items: [
+        { titulo: 'Reportes', icono: BarChart3, ruta: '/tutor/reportes' },
+      ],
     },
   ],
 }
@@ -183,12 +190,6 @@ export function AppSidebar({ rol, usuario, onCerrarSesion }: AppSidebarProps) {
   const { isMobile, setOpenMobile } = useSidebar()
   const rolActivo = rol ?? 'director'
   const grupos = MENU_POR_ROL[rolActivo]
-  const nombre = usuario
-    ? `${usuario.nombres} ${usuario.apellidos}`.trim()
-    : 'Usuario'
-  const iniciales = usuario
-    ? `${usuario.nombres[0] ?? ''}${usuario.apellidos[0] ?? ''}`.toUpperCase()
-    : 'US'
 
   /** En móvil el menú es un panel deslizante: se cierra al navegar. */
   function cerrarMenuMovil() {
@@ -284,29 +285,11 @@ export function AppSidebar({ rol, usuario, onCerrarSesion }: AppSidebarProps) {
       <SidebarFooter className="border-t border-sidebar-border/70 p-3">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              size="lg"
-              tooltip="Cerrar sesión"
-              onClick={onCerrarSesion}
-              aria-label="Cerrar sesión"
-              className="h-auto py-2.5"
-            >
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                {iniciales}
-              </span>
-              <div className="grid flex-1 text-left leading-tight">
-                <span className="truncate text-sm font-semibold">
-                  {nombre}
-                </span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {ETIQUETA_ROL[rolActivo]}
-                </span>
-              </div>
-              <LogOut
-                className="ml-auto size-4! shrink-0 text-muted-foreground"
-                aria-hidden="true"
-              />
-            </SidebarMenuButton>
+            <MenuUsuario
+              usuario={usuario}
+              rol={ETIQUETA_ROL[rolActivo]}
+              onCerrarSesion={onCerrarSesion}
+            />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

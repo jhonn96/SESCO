@@ -1,19 +1,23 @@
 """Router de usuarios.
 
-Todas las operaciones son exclusivas del Director: los datos personales y la
-gestión de cuentas no se exponen a otros roles. El propio usuario consulta su
-perfil en ``GET /api/auth/me``.
+La gestión de cuentas es exclusiva del Director. Cualquier usuario
+autenticado puede cambiar su propia contraseña en ``PUT /mi-password``; su
+perfil se consulta en ``GET /api/auth/me``.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Query, Response, status
 
-from app.api.deps import CurrentDirector, DbSession
+from app.api.deps import CurrentDirector, CurrentUser, DbSession
 from app.models import Usuario
 from app.schemas.usuario import (
     DisponibilidadCI,
+    PasswordActualizadaResponse,
+    PasswordRestablecidaResponse,
     UsuarioCreate,
+    UsuarioEstadoUpdate,
+    UsuarioPasswordUpdate,
     UsuarioResponse,
     UsuarioUpdate,
 )
@@ -61,6 +65,26 @@ def verificar_ci(
     )
 
 
+@router.put(
+    "/mi-password",
+    response_model=PasswordActualizadaResponse,
+    summary="Cambiar la contraseña propia",
+    description=(
+        "Verifica la contraseña vigente y guarda la nueva hasheada. "
+        "Disponible para cualquier usuario autenticado."
+    ),
+)
+def cambiar_mi_password(
+    datos: UsuarioPasswordUpdate,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> PasswordActualizadaResponse:
+    usuario_service.cambiar_password(db, current_user.id, datos)
+    return PasswordActualizadaResponse(
+        mensaje="Contraseña actualizada correctamente"
+    )
+
+
 @router.get(
     "/{usuario_id}",
     response_model=UsuarioResponse,
@@ -93,9 +117,78 @@ def actualizar_usuario(
     usuario_id: int,
     datos: UsuarioUpdate,
     db: DbSession,
-    _director: CurrentDirector,
+    director: CurrentDirector,
 ) -> Usuario:
-    return usuario_service.actualizar(db, usuario_id, datos)
+    return usuario_service.actualizar(
+        db, usuario_id, datos, current_user_id=director.id
+    )
+
+
+@router.patch(
+    "/{usuario_id}/estado",
+    response_model=UsuarioResponse,
+    summary="Activar, desactivar o desbloquear una cuenta (solo Director)",
+    description=(
+        "Permite cambiar ``activo`` y ``bloqueado_hasta``. Enviar "
+        "``bloqueado_hasta: null`` desbloquea la cuenta y reinicia "
+        "``intentos_fallidos`` a 0. No se puede desactivar la propia cuenta "
+        "ni al último director activo."
+    ),
+)
+def cambiar_estado_usuario(
+    usuario_id: int,
+    datos: UsuarioEstadoUpdate,
+    db: DbSession,
+    director: CurrentDirector,
+) -> Usuario:
+    return usuario_service.cambiar_estado(
+        db, usuario_id, datos, current_user_id=director.id
+    )
+
+
+@router.patch(
+    "/{usuario_id}/desbloquear",
+    response_model=UsuarioResponse,
+    summary="Desbloquear una cuenta (solo Director)",
+    description=(
+        "Pone ``bloqueado_hasta`` en null y reinicia ``intentos_fallidos`` a 0. "
+        "Se usa cuando la cuenta quedó bloqueada por intentos fallidos."
+    ),
+)
+def desbloquear_usuario(
+    usuario_id: int,
+    db: DbSession,
+    director: CurrentDirector,
+) -> Usuario:
+    return usuario_service.cambiar_estado(
+        db,
+        usuario_id,
+        UsuarioEstadoUpdate(bloqueado_hasta=None),
+        current_user_id=director.id,
+    )
+
+
+@router.patch(
+    "/{usuario_id}/reset-password",
+    response_model=PasswordRestablecidaResponse,
+    summary="Restablecer la contraseña de una cuenta (solo Director)",
+    description=(
+        "Asigna la contraseña temporal ``Sesco2026!`` sin cambiar el estado "
+        "de la cuenta. La respuesta incluye la contraseña para comunicarla."
+    ),
+)
+def restablecer_password_usuario(
+    usuario_id: int,
+    db: DbSession,
+    _director: CurrentDirector,
+) -> PasswordRestablecidaResponse:
+    usuario, password_temporal = usuario_service.restablecer_password(
+        db, usuario_id
+    )
+    return PasswordRestablecidaResponse(
+        usuario=UsuarioResponse.model_validate(usuario),
+        password_temporal=password_temporal,
+    )
 
 
 @router.delete(

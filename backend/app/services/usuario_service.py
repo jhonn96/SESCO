@@ -5,21 +5,37 @@ Reglas:
 - El rol debe existir en el catálogo.
 - No se puede cambiar el rol de un usuario que ya tiene perfil de estudiante,
   profesor o tutor (quedaría un perfil huérfano).
-- No se puede eliminar ni desactivar al último director activo.
+- No se puede desactivar la propia cuenta ni al último director activo.
+- Desbloquear una cuenta reinicia el contador de intentos fallidos.
 """
 
 from __future__ import annotations
+
+from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.exceptions import Conflicto, NoEncontrado, Prohibido, ReglaNegocio, traducir_integridad
+from app.core.exceptions import (
+    Conflicto,
+    NoEncontrado,
+    Prohibido,
+    ReglaNegocio,
+    traducir_integridad,
+)
 from app.core.orden import orden_persona
-from app.core.security import hash_password
+from app.core.security import hash_password, verify_password
 from app.models import Estudiante, Profesor, Rol, Tutor, Usuario
 from app.schemas.enums import IDS_ROL, RolNombre
-from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
+from app.schemas.usuario import (
+    UsuarioCreate,
+    UsuarioEstadoUpdate,
+    UsuarioPasswordUpdate,
+    UsuarioUpdate,
+)
+
+PASSWORD_TEMPORAL = "Sesco2026!"
 
 
 def _condiciones(
@@ -149,7 +165,13 @@ def crear(db: Session, datos: UsuarioCreate) -> Usuario:
     return obtener(db, usuario.id)
 
 
-def actualizar(db: Session, usuario_id: int, datos: UsuarioUpdate) -> Usuario:
+def actualizar(
+    db: Session,
+    usuario_id: int,
+    datos: UsuarioUpdate,
+    *,
+    current_user_id: int | None = None,
+) -> Usuario:
     usuario = obtener(db, usuario_id)
     cambios = {
         campo: valor
@@ -161,8 +183,11 @@ def actualizar(db: Session, usuario_id: int, datos: UsuarioUpdate) -> Usuario:
         _validar_rol(db, cambios["rol_id"])
         _validar_perfil(db, usuario, cambios["rol_id"])
 
-    if cambios.get("activo") is False and _es_ultimo_director_activo(db, usuario):
-        raise Conflicto("No se puede desactivar al último director activo")
+    if cambios.get("activo") is False:
+        if current_user_id is not None and usuario.id == current_user_id:
+            raise Prohibido("No puede desactivar su propia cuenta")
+        if _es_ultimo_director_activo(db, usuario):
+            raise Conflicto("No se puede desactivar al último director activo")
 
     if "rol_id" in cambios and cambios["rol_id"] != usuario.rol_id:
         if _es_ultimo_director_activo(db, usuario):
@@ -184,6 +209,81 @@ def actualizar(db: Session, usuario_id: int, datos: UsuarioUpdate) -> Usuario:
             referencia="Los datos del usuario no son válidos",
         ) from exc
     return obtener(db, usuario_id)
+
+
+def cambiar_estado(
+    db: Session,
+    usuario_id: int,
+    datos: UsuarioEstadoUpdate,
+    *,
+    current_user_id: int,
+) -> Usuario:
+    """Activa/desactiva una cuenta o cambia su fecha de bloqueo.
+
+    ``bloqueado_hasta: null`` desbloquea y reinicia ``intentos_fallidos``.
+    """
+    usuario = obtener(db, usuario_id)
+    campos = datos.model_fields_set
+
+    if not campos:
+        raise ReglaNegocio("Indica al menos un cambio de estado")
+
+    if "activo" in campos:
+        if datos.activo is None:
+            raise ReglaNegocio("El campo activo no puede ser nulo")
+        if datos.activo is False:
+            if usuario.id == current_user_id:
+                raise Prohibido("No puede desactivar su propia cuenta")
+            if _es_ultimo_director_activo(db, usuario):
+                raise Conflicto(
+                    "No se puede desactivar al último director activo"
+                )
+        usuario.activo = datos.activo
+
+    if "bloqueado_hasta" in campos:
+        if datos.bloqueado_hasta is None:
+            usuario.bloqueado_hasta = None
+            usuario.intentos_fallidos = 0
+        else:
+            hasta = datos.bloqueado_hasta
+            if hasta.tzinfo is None:
+                hasta = hasta.replace(tzinfo=timezone.utc)
+            if hasta <= datetime.now(timezone.utc):
+                raise ReglaNegocio("La fecha de bloqueo debe ser futura")
+            usuario.bloqueado_hasta = hasta
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise traducir_integridad(
+            exc,
+            duplicado="Ya existe un usuario con esa cédula",
+            referencia="Los datos del usuario no son válidos",
+        ) from exc
+    return obtener(db, usuario_id)
+
+
+def cambiar_password(
+    db: Session,
+    usuario_id: int,
+    datos: UsuarioPasswordUpdate,
+) -> None:
+    """Cambia la contraseña del propio usuario tras validar la vigente."""
+    usuario = obtener(db, usuario_id)
+    if not verify_password(datos.password_actual, usuario.password_hash):
+        raise ReglaNegocio("La contraseña actual no es correcta")
+
+    usuario.password_hash = hash_password(datos.password_nueva)
+    db.commit()
+
+
+def restablecer_password(db: Session, usuario_id: int) -> tuple[Usuario, str]:
+    """Asigna la contraseña temporal sin alterar el estado de la cuenta."""
+    usuario = obtener(db, usuario_id)
+    usuario.password_hash = hash_password(PASSWORD_TEMPORAL)
+    db.commit()
+    return obtener(db, usuario_id), PASSWORD_TEMPORAL
 
 
 def eliminar(db: Session, usuario_id: int, *, current_user_id: int) -> None:

@@ -13,6 +13,7 @@ from app.api.deps import CurrentDirector, DbSession
 from app.schemas.reporte import (
     ComparacionMensualResponse,
     PanelAsistenciaResponse,
+    RankingInasistenciasResponse,
     ReporteEstudiantesResponse,
 )
 from app.services import reporte_service
@@ -98,4 +99,44 @@ def reporte_estudiantes(
         desde=inicio,
         hasta=fin,
         curso_id=curso_id,
+    )
+
+
+@router.get(
+    "/ranking-inasistencias",
+    response_model=RankingInasistenciasResponse,
+    summary="Ranking de inasistencias del mes (solo Director)",
+    description=(
+        "Estudiantes ordenados de mayor a menor cantidad de faltas en el "
+        "periodo consultado (por defecto, el mes en curso), con sus tardanzas "
+        "y el tutor principal confirmado."
+    ),
+)
+def ranking_inasistencias(
+    db: DbSession,
+    _director: CurrentDirector,
+    desde: date | None = Query(
+        default=None, description="Inicio del rango (por defecto, el mes actual)"
+    ),
+    hasta: date | None = Query(
+        default=None, description="Fin del rango (por defecto, hoy)"
+    ),
+    curso_id: int | None = Query(
+        default=None, ge=1, description="Filtra por un curso específico"
+    ),
+    periodo_id: int | None = Query(
+        default=None, ge=1, description="Filtra los cursos de un periodo"
+    ),
+    limit: int = Query(default=200, ge=1, le=1000),
+) -> RankingInasistenciasResponse:
+    hoy = ahora_local().date()
+    inicio = desde or hoy.replace(day=1)
+    fin = hasta or hoy
+    return reporte_service.ranking_inasistencias(
+        db,
+        desde=inicio,
+        hasta=fin,
+        curso_id=curso_id,
+        periodo_id=periodo_id,
+        limit=limit,
     )

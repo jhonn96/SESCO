@@ -20,6 +20,7 @@ Reglas implementadas
 
 from __future__ import annotations
 
+import calendar
 import math
 from dataclasses import dataclass
 from datetime import date, datetime, time
@@ -37,18 +38,28 @@ from app.core.exceptions import (
     ReglaNegocio,
     traducir_integridad,
 )
+from app.core.orden import orden_persona
 from app.models import (
     Asistencia,
+    Curso,
     Estudiante,
     Horario,
+    Materia,
     Notificacion,
     ParametroAsistencia,
+    Profesor,
     ProfesorCurso,
     QrUso,
     Tutoria,
+    Usuario,
 )
 from app.schemas.asistencia import AsistenciaManualCreate
 from app.schemas.enums import EstadoAsistencia
+from app.schemas.lista_asistencia import (
+    DiaListaAsistencia,
+    EstudianteListaAsistencia,
+    ListaAsistenciaResponse,
+)
 from app.services import horario_service, qr_service
 from app.services.qr_service import ZONA_HORARIA
 
@@ -65,6 +76,17 @@ class ResultadoCierre:
     fecha: date
     faltas_registradas: int
     notificaciones_encoladas: int
+
+
+@dataclass(frozen=True)
+class ResultadoQr:
+    """Código vigente del estudiante junto con la clase que lo habilita."""
+
+    codigo: qr_service.CodigoQR
+    materia: str | None
+    profesor: str | None
+    hora_inicio: time | None
+    hora_fin: time | None
 
 
 # --------------------------------------------------------------------------
@@ -110,6 +132,9 @@ def _cargar_asistencia(db: Session, asistencia_id: int) -> Asistencia:
             joinedload(Asistencia.estudiante).joinedload(Estudiante.usuario),
             joinedload(Asistencia.horario).joinedload(Horario.materia),
             joinedload(Asistencia.horario).joinedload(Horario.curso),
+            joinedload(Asistencia.horario)
+            .joinedload(Horario.profesor)
+            .joinedload(Profesor.usuario),
         )
         .where(Asistencia.id == asistencia_id)
     )
@@ -172,21 +197,9 @@ def _bloque_vigente_docente(
 ) -> Horario:
     """Bloque en curso del curso del estudiante para el registro de un profesor.
 
-    ``horario`` no guarda al docente, así que la relación se obtiene por
-    ``profesor_curso``. Un profesor solo registra a estudiantes de sus cursos
-    y dentro del bloque que está en clase en ese momento.
+    Un profesor solo registra a estudiantes del bloque que tiene asignado y
+    que está en clase en ese momento.
     """
-    asignado = db.scalar(
-        select(ProfesorCurso.curso_id).where(
-            ProfesorCurso.profesor_id == profesor_id,
-            ProfesorCurso.curso_id == estudiante.curso_id,
-        )
-    )
-    if asignado is None:
-        raise ReglaNegocio(
-            "Ese estudiante no pertenece a ninguno de los cursos que tienes asignados."
-        )
-
     if fecha != momento.date():
         raise ReglaNegocio(
             "Solo puedes registrar la asistencia del día de hoy; "
@@ -313,30 +326,66 @@ def _encolar_notificacion(
 # --------------------------------------------------------------------------
 
 
+def _docente_del_bloque(db: Session, bloque: Horario) -> str | None:
+    """Nombre del profesor que dicta el bloque; respaldo: asesor del curso."""
+    if bloque.profesor is not None and bloque.profesor.usuario is not None:
+        usuario = bloque.profesor.usuario
+        return f"{usuario.nombres} {usuario.apellidos}".strip()
+    return _docente_del_curso(db, bloque.curso_id)
+
+
+def _docente_del_curso(db: Session, curso_id: int) -> str | None:
+    """Nombre del profesor asignado al curso (prioriza al asesor)."""
+    fila = db.execute(
+        select(Usuario.nombres, Usuario.apellidos)
+        .join(Profesor, Profesor.usuario_id == Usuario.id)
+        .join(ProfesorCurso, ProfesorCurso.profesor_id == Profesor.usuario_id)
+        .where(ProfesorCurso.curso_id == curso_id)
+        .order_by(ProfesorCurso.es_asesor.desc(), ProfesorCurso.profesor_id)
+        .limit(1)
+    ).first()
+    if fila is None:
+        return None
+    return f"{fila.nombres} {fila.apellidos}".strip()
+
+
 def generar_qr(
     db: Session,
     estudiante_id: int,
     *,
     momento: datetime | None = None,
-) -> qr_service.CodigoQR:
+) -> ResultadoQr:
     """Código TOTP vigente del estudiante autenticado.
 
     Solo se entrega durante un bloque del curso del estudiante (con 10
     minutos de tolerancia antes del inicio y después del fin). Fuera de ese
     rango se responde 403: la asistencia solo se registra en clase.
+
+    La respuesta incluye la materia y el docente del bloque vigente para que
+    el panel del estudiante muestre su clase actual.
     """
     estudiante = _cargar_estudiante(db, estudiante_id)
     parametros = _parametros(db)
     ahora = momento or qr_service.ahora_local()
 
-    if horario_service.bloque_para_qr(db, estudiante.curso_id, momento=ahora) is None:
+    bloque = horario_service.bloque_para_qr(
+        db, estudiante.curso_id, momento=ahora
+    )
+    if bloque is None:
         raise Prohibido("No tienes una clase en curso para registrar asistencia")
 
-    return qr_service.generar_para_estudiante(
+    codigo = qr_service.generar_para_estudiante(
         estudiante_id=estudiante.usuario_id,
         secreto=estudiante.secreto_qr,
         ventana_seg=parametros.qr_ventana_seg,
         momento=ahora,
+    )
+    return ResultadoQr(
+        codigo=codigo,
+        materia=bloque.materia.nombre if bloque.materia else None,
+        profesor=_docente_del_bloque(db, bloque),
+        hora_inicio=bloque.hora_inicio,
+        hora_fin=bloque.hora_fin,
     )
 
 
@@ -571,17 +620,10 @@ def cerrar_bloque(
     if fecha > ahora.date():
         raise ReglaNegocio("No se puede cerrar un bloque en una fecha futura")
 
-    if es_profesor:
-        asignado = db.scalar(
-            select(ProfesorCurso.curso_id).where(
-                ProfesorCurso.profesor_id == profesor_id,
-                ProfesorCurso.curso_id == horario.curso_id,
-            )
+    if es_profesor and horario.profesor_id != profesor_id:
+        raise Prohibido(
+            "Ese bloque no está asignado a tu horario personal."
         )
-        if asignado is None:
-            raise Prohibido(
-                "Ese bloque no pertenece a ninguno de los cursos que tienes asignados."
-            )
 
     inicio = datetime.combine(fecha, horario.hora_inicio, tzinfo=ZONA_HORARIA)
     if inicio > ahora:
@@ -711,6 +753,9 @@ def listar(
                 joinedload(Asistencia.estudiante).joinedload(Estudiante.usuario),
                 joinedload(Asistencia.horario).joinedload(Horario.materia),
                 joinedload(Asistencia.horario).joinedload(Horario.curso),
+                joinedload(Asistencia.horario)
+                .joinedload(Horario.profesor)
+                .joinedload(Profesor.usuario),
             )
             .where(*condiciones)
             .order_by(Asistencia.fecha.desc(), Horario.hora_inicio, Asistencia.estudiante_id)
@@ -732,12 +777,10 @@ def listar_hoy_de_profesor(
     curso_id: int | None = None,
     materia_id: int | None = None,
 ) -> list[Asistencia]:
-    """Registros de hoy de todos los cursos asignados al docente.
+    """Registros de hoy de los bloques asignados al docente.
 
-    La relación docente-curso vive en ``profesor_curso`` (``horario`` no
-    guarda al profesor). Se incluyen solo los bloques de esos cursos que
-    corresponden al día de la semana actual y, si se indican, se acotan por
-    curso o materia.
+    Se incluyen solo los bloques que el profesor dicta y que corresponden al
+    día de la semana actual; si se indican, se acotan por curso o materia.
 
     Además se deduplica por ``(estudiante, materia, hora de inicio)`` para que
     un posible ``horario`` repetido no muestre al mismo estudiante dos veces
@@ -749,13 +792,9 @@ def listar_hoy_de_profesor(
     if dia is None:
         return []
 
-    cursos = select(ProfesorCurso.curso_id).where(
-        ProfesorCurso.profesor_id == profesor_id
-    )
-
     condiciones: list[Any] = [
         Asistencia.fecha == fecha,
-        Horario.curso_id.in_(cursos),
+        Horario.profesor_id == profesor_id,
         Horario.dia_semana == dia,
     ]
     if curso_id is not None:
@@ -770,6 +809,9 @@ def listar_hoy_de_profesor(
             joinedload(Asistencia.estudiante).joinedload(Estudiante.usuario),
             joinedload(Asistencia.horario).joinedload(Horario.materia),
             joinedload(Asistencia.horario).joinedload(Horario.curso),
+            joinedload(Asistencia.horario)
+            .joinedload(Horario.profesor)
+            .joinedload(Profesor.usuario),
         )
         .where(*condiciones)
         .order_by(
@@ -791,3 +833,147 @@ def listar_hoy_de_profesor(
         vistos.add(clave)
         unicos.append(item)
     return unicos
+
+
+DIAS_SEMANA = (
+    "lunes",
+    "martes",
+    "miercoles",
+    "jueves",
+    "viernes",
+    "sabado",
+    "domingo",
+)
+
+PRIORIDAD_ESTADO = {
+    EstadoAsistencia.PRESENTE.value: 1,
+    EstadoAsistencia.TARDANZA.value: 2,
+    EstadoAsistencia.FALTA.value: 3,
+    EstadoAsistencia.JUSTIFICADA.value: 4,
+}
+
+
+def lista_mensual_de_profesor(
+    db: Session,
+    profesor_id: int,
+    *,
+    curso_id: int,
+    materia_id: int,
+    mes: str,
+) -> ListaAsistenciaResponse:
+    """Matriz mensual de asistencia de un curso y materia del docente.
+
+    El mes llega como ``AAAA-MM``. Se incluyen todos los estudiantes
+    matriculados en el curso ordenados por apellidos y, por cada día, el
+    estado más relevante registrado para esa materia (justificada > falta >
+    tardanza > presente).
+
+    Solo se devuelven días de lunes a viernes. Un día se incluye si tiene al
+    menos un registro de asistencia o si está programado en el horario y aún
+    no ha pasado, de modo que los feriados sin registros no generan columnas.
+    """
+    partes = mes.split("-")
+    if len(partes) != 2:
+        raise ReglaNegocio("El mes debe tener el formato AAAA-MM")
+    try:
+        anio, numero_mes = (int(parte) for parte in partes)
+    except ValueError as exc:
+        raise ReglaNegocio("El mes debe tener el formato AAAA-MM") from exc
+    if not 1 <= numero_mes <= 12:
+        raise ReglaNegocio("El mes debe estar entre 01 y 12")
+
+    inicio = date(anio, numero_mes, 1)
+    ultimo_dia = calendar.monthrange(anio, numero_mes)[1]
+    fin = date(anio, numero_mes, ultimo_dia)
+
+    curso = db.get(Curso, curso_id)
+    if curso is None:
+        raise NoEncontrado(f"No existe el curso {curso_id}")
+    materia = db.get(Materia, materia_id)
+    if materia is None:
+        raise NoEncontrado(f"No existe la materia {materia_id}")
+
+    dias_clase = set(
+        db.scalars(
+            select(Horario.dia_semana).where(
+                Horario.profesor_id == profesor_id,
+                Horario.curso_id == curso_id,
+                Horario.materia_id == materia_id,
+            )
+        )
+    )
+    if not dias_clase:
+        raise Prohibido(
+            "Ese curso y materia no están asignados a tu horario."
+        )
+
+    estudiantes = list(
+        db.scalars(
+            select(Estudiante)
+            .join(Usuario, Usuario.id == Estudiante.usuario_id)
+            .options(joinedload(Estudiante.usuario))
+            .where(Estudiante.curso_id == curso_id)
+            .order_by(*orden_persona())
+        )
+    )
+
+    registros = db.execute(
+        select(Asistencia.estudiante_id, Asistencia.fecha, Asistencia.estado)
+        .join(Horario, Horario.id == Asistencia.horario_id)
+        .where(
+            Asistencia.fecha >= inicio,
+            Asistencia.fecha <= fin,
+            Horario.profesor_id == profesor_id,
+            Horario.curso_id == curso_id,
+            Horario.materia_id == materia_id,
+        )
+    ).all()
+
+    estados: dict[int, dict[str, str]] = {}
+    fechas_con_registro: set[date] = set()
+    for estudiante_id, fecha, estado in registros:
+        fechas_con_registro.add(fecha)
+        clave = fecha.isoformat()
+        por_fecha = estados.setdefault(estudiante_id, {})
+        actual = por_fecha.get(clave)
+        if actual is None or PRIORIDAD_ESTADO[estado] > PRIORIDAD_ESTADO[actual]:
+            por_fecha[clave] = estado
+
+    hoy = qr_service.ahora_local().date()
+    dias: list[DiaListaAsistencia] = []
+    for numero in range(1, ultimo_dia + 1):
+        fecha = date(anio, numero_mes, numero)
+        if fecha.weekday() >= 5:
+            continue
+        nombre_dia = DIAS_SEMANA[fecha.weekday()]
+        es_clase = nombre_dia in dias_clase
+        tiene_registro = fecha in fechas_con_registro
+        if not tiene_registro and not (es_clase and fecha >= hoy):
+            continue
+        dias.append(
+            DiaListaAsistencia(
+                fecha=fecha,
+                dia=numero,
+                dia_semana=nombre_dia,
+                es_clase=es_clase,
+            )
+        )
+
+    filas = [
+        EstudianteListaAsistencia(
+            usuario_id=estudiante.usuario_id,
+            nombres=estudiante.usuario.nombres,
+            apellidos=estudiante.usuario.apellidos,
+            ci=estudiante.usuario.ci,
+            estados=estados.get(estudiante.usuario_id, {}),
+        )
+        for estudiante in estudiantes
+    ]
+
+    return ListaAsistenciaResponse(
+        mes=mes,
+        curso=curso,
+        materia=materia,
+        dias=dias,
+        estudiantes=filas,
+    )

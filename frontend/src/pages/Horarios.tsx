@@ -33,6 +33,7 @@ import { compararCursos, etiquetaCurso, nombreTurno } from '@/lib/cursos'
 import { mensajeDeError } from '@/lib/errores'
 import { formatearFechaLarga, hoyIso } from '@/lib/fechas'
 import { DIAS_SEMANA, type DiaSemana } from '@/lib/horarios'
+import { nombreCompleto } from '@/lib/personas'
 import { cn } from '@/lib/utils'
 import { listarCursos } from '@/services/cursos'
 import {
@@ -392,16 +393,17 @@ export function Horarios() {
           </p>
         ) : null}
 
-        <Table className="horario-matriz min-w-[920px]">
+        <Table className="horario-matriz w-full table-fixed">
           <TableHeader>
             <TableRow className="border-neutral-200 hover:bg-transparent">
-              <TableHead className="w-24 border-r border-amber-200 bg-amber-100 px-3 text-[11px] font-semibold tracking-wide text-amber-950 uppercase">
+              <TableHead className="h-auto w-20 border-r border-amber-200 bg-amber-100 px-2 py-1.5 text-xs font-semibold tracking-wide text-amber-950 uppercase">
                 Hora
               </TableHead>
               {DIAS_SEMANA.map((dia) => (
                 <TableHead
                   key={dia.valor}
-                  className="border-r border-amber-200 bg-amber-100 px-3 text-center text-[11px] font-semibold tracking-[0.18em] text-amber-950 uppercase last:border-r-0"
+                  title={dia.etiqueta}
+                  className="h-auto truncate border-r border-amber-200 bg-amber-100 px-1.5 py-1.5 text-center text-sm font-semibold tracking-wide text-amber-950 uppercase last:border-r-0"
                 >
                   {dia.etiqueta}
                 </TableHead>
@@ -431,9 +433,9 @@ export function Horarios() {
             {mostrarMatriz ? (
               <>
                 <TableRow className="border-neutral-200 bg-amber-50 hover:bg-amber-50">
-                  <TableCell className="border-r border-neutral-200 px-3 py-2 align-middle">
+                  <TableCell className="border-r border-neutral-200 px-2 py-1 align-middle">
                     <span className="text-[10px] font-semibold tracking-wide text-amber-900 uppercase">
-                      Hora de ingreso
+                      Ingreso
                     </span>
                   </TableCell>
                   {DIAS_SEMANA.map((dia) => {
@@ -441,7 +443,7 @@ export function Horarios() {
                     return (
                       <TableCell
                         key={dia.valor}
-                        className="border-r border-neutral-200 px-3 py-2 text-center align-middle last:border-r-0"
+                        className="border-r border-neutral-200 px-1.5 py-1 text-center align-middle text-xs last:border-r-0"
                       >
                         {ingreso ? (
                           <span className="font-semibold tabular-nums text-amber-900">
@@ -461,12 +463,12 @@ export function Horarios() {
                       key={fila.clave}
                       className="border-neutral-200 bg-amber-100 hover:bg-amber-100"
                     >
-                      <TableCell className="border-r border-neutral-200 px-3 py-2 align-middle text-xs font-semibold tabular-nums text-amber-950">
+                      <TableCell className="border-r border-neutral-200 px-2 py-0.5 align-middle text-[10px] font-semibold tabular-nums text-amber-950">
                         {horaCorta(fila.desde)}–{horaCorta(fila.hasta)}
                       </TableCell>
                       <TableCell
                         colSpan={DIAS_SEMANA.length}
-                        className="px-3 py-2 text-center text-[11px] font-semibold tracking-[0.35em] text-amber-900/80 uppercase"
+                        className="px-2 py-0.5 text-center text-[10px] font-semibold tracking-[0.3em] text-amber-900/80 uppercase"
                       >
                         Receso
                       </TableCell>
@@ -476,11 +478,11 @@ export function Horarios() {
                       key={fila.franja.clave}
                       className="border-neutral-200 hover:bg-neutral-50"
                     >
-                      <TableCell className="border-r border-neutral-200 bg-neutral-100 px-3 py-2 align-middle">
-                        <span className="block text-xs font-semibold tabular-nums text-neutral-900">
+                      <TableCell className="border-r border-neutral-200 bg-neutral-100 px-2 py-1 align-middle">
+                        <span className="block text-[11px] font-semibold tabular-nums text-neutral-900">
                           {horaCorta(fila.franja.inicio)}
                         </span>
-                        <span className="block text-[11px] tabular-nums text-neutral-500">
+                        <span className="block text-[10px] tabular-nums text-neutral-500">
                           {horaCorta(fila.franja.fin)}
                         </span>
                       </TableCell>
@@ -493,10 +495,10 @@ export function Horarios() {
                           return (
                             <TableCell
                               key={dia.valor}
-                              className="border-r border-neutral-200 px-1.5 py-1.5 align-top last:border-r-0"
+                              className="border-r border-neutral-200 px-1 py-1 align-top last:border-r-0"
                             >
                               <span
-                                className="block h-14 rounded-md border border-dashed border-neutral-300 bg-neutral-50"
+                                className="block h-12 rounded-md border border-dashed border-neutral-300 bg-neutral-50"
                                 aria-hidden="true"
                               />
                             </TableCell>
@@ -506,31 +508,37 @@ export function Horarios() {
                         const materia =
                           bloque.materia?.nombre ??
                           `Materia #${bloque.materia_id}`
+                        const profesor =
+                          nombreCompleto(bloque.profesor?.usuario) ||
+                          'Sin profesor'
                         return (
                           <TableCell
                             key={dia.valor}
-                            className="group relative border-r border-neutral-200 px-1.5 py-1.5 align-top last:border-r-0"
+                            className="group relative border-r border-neutral-200 px-1 py-1 align-top last:border-r-0"
                           >
                             <div
                               className={cn(
-                                'flex h-14 flex-col justify-center gap-1 rounded-md border px-2 py-1.5 shadow-xs',
+                                'flex h-12 min-w-0 flex-col justify-center gap-0.5 overflow-hidden rounded-md border px-1.5 py-1 shadow-xs',
                                 colorMateria(bloque.materia_id),
                               )}
-                              title={`${materia} · ${dia.etiqueta} ${horaCorta(
+                              title={`${materia} · ${profesor} · ${dia.etiqueta} ${horaCorta(
                                 bloque.hora_inicio,
                               )}–${horaCorta(bloque.hora_fin)}`}
                             >
-                              <p className="line-clamp-2 text-[13px] leading-tight font-semibold">
+                              <p className="truncate text-xs leading-tight font-semibold">
                                 {materia}
                               </p>
+                              <p className="truncate text-[9px] leading-tight opacity-80">
+                                {profesor}
+                              </p>
                               {bloque.es_ultimo_bloque ? (
-                                <span className="text-[9px] font-semibold tracking-wide uppercase opacity-70">
+                                <span className="truncate text-[8px] font-semibold tracking-wide uppercase opacity-70">
                                   Cierre de jornada
                                 </span>
                               ) : null}
                             </div>
 
-                            <div className="absolute top-2 right-2 flex gap-0.5 rounded-md bg-background/90 p-0.5 opacity-0 shadow-sm ring-1 ring-border transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 print:hidden">
+                            <div className="absolute top-1 right-1 flex gap-0.5 rounded-md bg-background/90 p-0.5 opacity-0 shadow-sm ring-1 ring-border transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 print:hidden">
                               <Button
                                 type="button"
                                 variant="ghost"

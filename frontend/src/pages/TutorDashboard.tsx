@@ -66,6 +66,7 @@ import {
   crearJustificacion,
   type EstadoJustificacion,
 } from '@/services/justificaciones'
+import { listarNotificaciones } from '@/services/notificaciones'
 import {
   obtenerHistorialHijo,
   obtenerMisHijos,
@@ -290,6 +291,14 @@ export function TutorDashboard() {
     staleTime: 60_000,
   })
 
+  const notificacionesQuery = useQuery({
+    queryKey: ['tutor', 'notificaciones', 'resumen'],
+    queryFn: ({ signal }) =>
+      listarNotificaciones({ soloNoLeidas: true, limit: 1 }, signal),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  })
+
   const justificar = useMutation({
     mutationFn: crearJustificacion,
     onSuccess: () => {
@@ -353,12 +362,15 @@ export function TutorDashboard() {
     [registros],
   )
 
+  const notificacionesPendientes = notificacionesQuery.data?.total ?? 0
+
   const actualizando =
     hijosQuery.isFetching ||
     resumenQuery.isFetching ||
     historialQuery.isFetching ||
     avisosQuery.isFetching ||
-    citacionesQuery.isFetching
+    citacionesQuery.isFetching ||
+    notificacionesQuery.isFetching
 
   function actualizarTodo() {
     void hijosQuery.refetch()
@@ -366,6 +378,7 @@ export function TutorDashboard() {
     void historialQuery.refetch()
     void avisosQuery.refetch()
     void citacionesQuery.refetch()
+    void notificacionesQuery.refetch()
   }
 
   function abrirJustificacion(registro: HistorialHijo) {
@@ -535,19 +548,39 @@ export function TutorDashboard() {
         }, justifica faltas y confirma los comunicados del colegio.`}
         icono={HeartHandshake}
         acciones={
-          <Button
-            type="button"
-            variant="outline"
-            className="h-10"
-            onClick={actualizarTodo}
-            disabled={actualizando}
-          >
-            <RefreshCw
-              className={cn('size-4', actualizando && 'animate-spin')}
-              aria-hidden="true"
-            />
-            Actualizar
-          </Button>
+          <>
+            <Button
+              asChild
+              variant={notificacionesPendientes > 0 ? 'default' : 'outline'}
+              className="h-10"
+            >
+              <Link
+                to="/tutor/notificaciones"
+                aria-label={`Ver notificaciones${notificacionesPendientes > 0 ? `, ${notificacionesPendientes} sin leer` : ''}`}
+              >
+                <Bell aria-hidden="true" />
+                Notificaciones
+                {notificacionesPendientes > 0 ? (
+                  <span className="ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-background/20 px-1.5 text-xs font-semibold tabular-nums">
+                    {notificacionesPendientes}
+                  </span>
+                ) : null}
+              </Link>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10"
+              onClick={actualizarTodo}
+              disabled={actualizando}
+            >
+              <RefreshCw
+                className={cn('size-4', actualizando && 'animate-spin')}
+                aria-hidden="true"
+              />
+              Actualizar
+            </Button>
+          </>
         }
       />
 

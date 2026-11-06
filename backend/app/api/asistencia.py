@@ -60,8 +60,15 @@ def _respuesta(resultado: asistencia_service.ResultadoRegistro) -> dict:
     },
 )
 def obtener_qr(db: DbSession, estudiante: CurrentEstudiante) -> QrResponse:
-    codigo = asistencia_service.generar_qr(db, estudiante.id)
-    return QrResponse.model_validate(codigo)
+    resultado = asistencia_service.generar_qr(db, estudiante.id)
+    return QrResponse.model_validate(resultado.codigo).model_copy(
+        update={
+            "materia": resultado.materia,
+            "profesor": resultado.profesor,
+            "hora_inicio": resultado.hora_inicio,
+            "hora_fin": resultado.hora_fin,
+        }
+    )
 
 
 @router.post(

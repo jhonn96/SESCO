@@ -19,3 +19,6 @@ build/
 
 # Base de datos (si no quieres versionar el volcado local)
 *.sql
+
+# Las migraciones sí se versionan (el volcado local no)
+!backend/migrations/*.sql

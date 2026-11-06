@@ -1,6 +1,7 @@
 import { api } from './api'
 import type { Curso } from './cursos'
 import type { Materia } from './materias'
+import type { Profesor } from './profesores'
 import type { DiaSemana } from '../lib/horarios'
 
 /** Bloque de clase de un curso. Espejo de `HorarioResponse`. */
@@ -8,18 +9,21 @@ export interface Horario {
   id: number
   curso_id: number
   materia_id: number
+  profesor_id: number
   dia_semana: DiaSemana
   hora_inicio: string
   hora_fin: string
   es_ultimo_bloque: boolean
   materia: Materia | null
   curso: Curso | null
+  profesor: Profesor | null
 }
 
 /** Alta de un bloque; el backend rechaza solapamientos y segundos cierres. */
 export interface NuevoHorario {
   curso_id: number
   materia_id: number
+  profesor_id: number
   dia_semana: DiaSemana
   hora_inicio: string
   hora_fin: string

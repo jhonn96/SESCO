@@ -14,8 +14,9 @@ Reglas implementadas
 - **Idempotencia**: las alertas se deduplican por ``(estudiante, tipo, día)`` y
   los reportes por el prefijo ``Curso + Semana`` del mensaje. Ejecutar la
   generación dos veces el mismo día no crea duplicados.
-- Los avisos de una alerta se envían al tutor principal confirmado y a los
-  Directores activos (mismo criterio que el dataset de ``sesco_db.sql``).
+- Los avisos de una alerta se envían al tutor principal confirmado, a los
+  Directores activos y al profesor asesor del curso
+  (``profesor_curso.es_asesor``).
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core import audit
-from app.core.exceptions import Conflicto, NoEncontrado
+from app.core.exceptions import Conflicto, NoEncontrado, Prohibido
 from app.models import (
     Alerta,
     Asistencia,
@@ -37,11 +38,20 @@ from app.models import (
     Horario,
     Notificacion,
     ParametroAsistencia,
+    ProfesorCurso,
+    Tutor,
     Tutoria,
     Usuario,
 )
-from app.schemas.alerta import ReporteInasistenciaResponse
+from app.schemas.alerta import (
+    EstudianteRiesgoResponse,
+    NotificacionTutorResponse,
+    ReporteInasistenciaResponse,
+    RiesgoProfesorResponse,
+)
+from app.schemas.curso import CursoResponse
 from app.schemas.enums import IDS_ROL, RolNombre, TipoAlerta
+from app.schemas.estudiante import TutorACargoResponse
 from app.services import qr_service, reporte_service
 
 #: Meses en español para los textos de las alertas.
@@ -75,6 +85,14 @@ class ResultadoGeneracion:
     umbral_inasistencia_pct: float = 0.0
 
 
+@dataclass(frozen=True)
+class RiesgoAsistencia:
+    """Indicadores de riesgo calculados sobre el primer bloque del curso."""
+
+    faltas_consecutivas: int
+    tardanzas_mes: int
+
+
 # --------------------------------------------------------------------------
 # Datos auxiliares
 # --------------------------------------------------------------------------
@@ -104,6 +122,24 @@ def _directores_activos(db: Session) -> list[int]:
     )
 
 
+def _profesores_asesores(db: Session, curso_ids: list[int]) -> dict[int, int]:
+    """``curso_id -> profesor_id`` del asesor asignado a cada curso."""
+    if not curso_ids:
+        return {}
+    filas = db.execute(
+        select(ProfesorCurso.curso_id, ProfesorCurso.profesor_id)
+        .where(
+            ProfesorCurso.curso_id.in_(curso_ids),
+            ProfesorCurso.es_asesor.is_(True),
+        )
+        .order_by(ProfesorCurso.curso_id, ProfesorCurso.profesor_id)
+    ).all()
+    asesores: dict[int, int] = {}
+    for curso_id, profesor_id in filas:
+        asesores.setdefault(curso_id, profesor_id)
+    return asesores
+
+
 def _tutores_principales(db: Session, estudiante_ids: list[int]) -> dict[int, int]:
     if not estudiante_ids:
         return {}
@@ -119,6 +155,44 @@ def _tutores_principales(db: Session, estudiante_ids: list[int]) -> dict[int, in
     tutores: dict[int, int] = {}
     for estudiante_id, tutor_id in filas:
         tutores.setdefault(estudiante_id, tutor_id)
+    return tutores
+
+
+def _tutores_detalle(
+    db: Session, estudiante_ids: list[int]
+) -> dict[int, TutorACargoResponse]:
+    """Tutor principal confirmado (o el primero confirmado) de cada estudiante."""
+    if not estudiante_ids:
+        return {}
+    filas = db.execute(
+        select(Tutoria.estudiante_id, Usuario, Tutor, Tutoria)
+        .join(Usuario, Usuario.id == Tutoria.tutor_id)
+        .join(Tutor, Tutor.usuario_id == Usuario.id)
+        .where(
+            Tutoria.estudiante_id.in_(estudiante_ids),
+            Tutoria.estado == "confirmada",
+        )
+        .order_by(
+            Tutoria.estudiante_id,
+            Tutoria.es_principal.desc(),
+            Usuario.apellidos,
+            Usuario.nombres,
+        )
+    ).all()
+
+    tutores: dict[int, TutorACargoResponse] = {}
+    for estudiante_id, usuario, tutor, tutoria in filas:
+        if estudiante_id in tutores:
+            continue
+        tutores[estudiante_id] = TutorACargoResponse(
+            tutor_id=usuario.id,
+            nombres=usuario.nombres,
+            apellidos=usuario.apellidos,
+            ci=usuario.ci,
+            parentesco=tutoria.parentesco,
+            telefono=tutor.telefono,
+            es_principal=tutoria.es_principal,
+        )
     return tutores
 
 
@@ -181,6 +255,43 @@ def _tardanzas_del_mes(
         for fecha, estado in registros
         if estado == "tardanza" and inicio_mes <= fecha <= hasta
     )
+
+
+def _calcular_riesgo(
+    db: Session,
+    *,
+    estudiantes: list[Estudiante],
+    hasta: date,
+) -> dict[int, RiesgoAsistencia]:
+    """Calcula faltas consecutivas y tardanzas mensuales del primer bloque."""
+    if not estudiantes:
+        return {}
+
+    primeros = _primer_bloque_por_curso(db)
+    por_estudiante = {e.usuario_id: e for e in estudiantes}
+    horario_ids = sorted(
+        {primeros[e.curso_id] for e in estudiantes if e.curso_id in primeros}
+    )
+    registros = _registros_primer_bloque(
+        db,
+        estudiante_ids=list(por_estudiante),
+        horario_ids=horario_ids,
+        hasta=hasta,
+    )
+    inicio_mes = hasta.replace(day=1)
+    return {
+        estudiante_id: RiesgoAsistencia(
+            faltas_consecutivas=_racha_faltas(
+                registros.get(estudiante_id, []), hasta=hasta
+            ),
+            tardanzas_mes=_tardanzas_del_mes(
+                registros.get(estudiante_id, []),
+                inicio_mes=inicio_mes,
+                hasta=hasta,
+            ),
+        )
+        for estudiante_id in por_estudiante
+    }
 
 
 def _alertas_existentes(
@@ -257,37 +368,36 @@ def _generar_alertas_estudiante(
     if not estudiantes:
         return [], 0
 
-    primeros = _primer_bloque_por_curso(db)
     por_estudiante = {e.usuario_id: e for e in estudiantes}
-    horario_ids = sorted({primeros[e.curso_id] for e in estudiantes if e.curso_id in primeros})
-    registros = _registros_primer_bloque(
-        db, estudiante_ids=list(por_estudiante), horario_ids=horario_ids, hasta=hasta
-    )
+    riesgos = _calcular_riesgo(db, estudiantes=estudiantes, hasta=hasta)
 
     existentes = _alertas_existentes(db, estudiante_ids=list(por_estudiante), dia=hasta)
     tutores = _tutores_principales(db, list(por_estudiante))
-    inicio_mes = hasta.replace(day=1)
+    asesores = _profesores_asesores(
+        db, sorted({e.curso_id for e in estudiantes if e.curso_id is not None})
+    )
     umbral_faltas = parametros.umbral_alerta_faltas
     umbral_tardanzas = parametros.umbral_alerta_tardanzas
 
     nuevas: list[Alerta] = []
     notificaciones = 0
     for estudiante_id, estudiante in por_estudiante.items():
-        filas = registros.get(estudiante_id, [])
+        riesgo = riesgos[estudiante_id]
         candidatos: list[tuple[str, str]] = []
 
-        racha = _racha_faltas(filas, hasta=hasta)
-        if racha >= umbral_faltas:
+        if riesgo.faltas_consecutivas >= umbral_faltas:
             candidatos.append(
-                (TipoAlerta.FALTAS.value, _detalle_faltas(racha, umbral_faltas))
+                (
+                    TipoAlerta.FALTAS.value,
+                    _detalle_faltas(riesgo.faltas_consecutivas, umbral_faltas),
+                )
             )
 
-        tardanzas = _tardanzas_del_mes(filas, inicio_mes=inicio_mes, hasta=hasta)
-        if tardanzas >= umbral_tardanzas:
+        if riesgo.tardanzas_mes >= umbral_tardanzas:
             candidatos.append(
                 (
                     TipoAlerta.TARDANZAS.value,
-                    _detalle_tardanzas(tardanzas, umbral_tardanzas, hasta),
+                    _detalle_tardanzas(riesgo.tardanzas_mes, umbral_tardanzas, hasta),
                 )
             )
 
@@ -303,7 +413,11 @@ def _generar_alertas_estudiante(
             )
             db.add(alerta)
             db.flush()
-            destinatarios = ([tutores[estudiante_id]] if estudiante_id in tutores else []) + directores
+            destinatarios = list(directores)
+            if estudiante_id in tutores:
+                destinatarios.append(tutores[estudiante_id])
+            if estudiante.curso_id in asesores:
+                destinatarios.append(asesores[estudiante.curso_id])
             notificaciones += _notificar_alerta(
                 db, alerta=alerta, estudiante=estudiante, destinatarios=destinatarios
             )
@@ -481,6 +595,184 @@ def generar(
         semana_inicio=inicio,
         semana_fin=fin,
         umbral_inasistencia_pct=umbral,
+    )
+
+
+# --------------------------------------------------------------------------
+# Alertas del profesor (RF-06)
+# --------------------------------------------------------------------------
+
+
+def _cursos_de_profesor(db: Session, profesor_id: int) -> list[int]:
+    return list(
+        db.scalars(
+            select(ProfesorCurso.curso_id)
+            .where(ProfesorCurso.profesor_id == profesor_id)
+            .order_by(ProfesorCurso.curso_id)
+        )
+    )
+
+
+def riesgo_profesor(
+    db: Session,
+    *,
+    profesor_id: int,
+    hasta: date | None = None,
+) -> RiesgoProfesorResponse:
+    """Estudiantes de los cursos del docente que alcanzan los umbrales de alerta."""
+    hoy = hasta or qr_service.ahora_local().date()
+    parametros = _parametros(db)
+    umbral_faltas = parametros.umbral_alerta_faltas
+    umbral_tardanzas = parametros.umbral_alerta_tardanzas
+    curso_ids = _cursos_de_profesor(db, profesor_id)
+
+    if not curso_ids:
+        return RiesgoProfesorResponse(
+            generado_en=datetime.now(qr_service.ZONA_HORARIA),
+            fecha=hoy,
+            umbral_faltas=umbral_faltas,
+            umbral_tardanzas=umbral_tardanzas,
+            total_estudiantes=0,
+        )
+
+    estudiantes = list(
+        db.scalars(
+            select(Estudiante)
+            .join(Curso, Curso.id == Estudiante.curso_id)
+            .options(
+                joinedload(Estudiante.usuario),
+                joinedload(Estudiante.curso),
+            )
+            .where(Estudiante.curso_id.in_(curso_ids))
+            .order_by(
+                Curso.nivel,
+                Curso.grado,
+                Curso.paralelo,
+                Estudiante.usuario_id,
+            )
+        )
+    )
+    riesgos = _calcular_riesgo(db, estudiantes=estudiantes, hasta=hoy)
+    tutores = _tutores_detalle(db, [e.usuario_id for e in estudiantes])
+
+    filas: list[EstudianteRiesgoResponse] = []
+    for estudiante in estudiantes:
+        riesgo = riesgos[estudiante.usuario_id]
+        motivos: list[str] = []
+        if riesgo.faltas_consecutivas >= umbral_faltas:
+            motivos.append(
+                f"{riesgo.faltas_consecutivas} faltas consecutivas "
+                f"(umbral {umbral_faltas})"
+            )
+        if riesgo.tardanzas_mes >= umbral_tardanzas:
+            motivos.append(
+                f"{riesgo.tardanzas_mes} tardanzas en el mes "
+                f"(umbral {umbral_tardanzas})"
+            )
+        if not motivos:
+            continue
+        filas.append(
+            EstudianteRiesgoResponse(
+                estudiante_id=estudiante.usuario_id,
+                nombres=estudiante.usuario.nombres,
+                apellidos=estudiante.usuario.apellidos,
+                ci=estudiante.usuario.ci,
+                curso_id=estudiante.curso_id,
+                curso=CursoResponse.model_validate(estudiante.curso),
+                faltas_consecutivas=riesgo.faltas_consecutivas,
+                tardanzas_mes=riesgo.tardanzas_mes,
+                umbral_faltas=umbral_faltas,
+                umbral_tardanzas=umbral_tardanzas,
+                motivos=motivos,
+                tutor=tutores.get(estudiante.usuario_id),
+            )
+        )
+
+    return RiesgoProfesorResponse(
+        generado_en=datetime.now(qr_service.ZONA_HORARIA),
+        fecha=hoy,
+        umbral_faltas=umbral_faltas,
+        umbral_tardanzas=umbral_tardanzas,
+        total_estudiantes=len(filas),
+        estudiantes=filas,
+    )
+
+
+def notificar_tutor(
+    db: Session,
+    *,
+    estudiante_id: int,
+    profesor_id: int,
+    usuario_id: int,
+    ip: str | None = None,
+) -> NotificacionTutorResponse:
+    """Envía un aviso del profesor asesor al tutor principal del estudiante."""
+    estudiante = db.scalar(
+        select(Estudiante)
+        .options(joinedload(Estudiante.usuario))
+        .where(Estudiante.usuario_id == estudiante_id)
+    )
+    if estudiante is None:
+        raise NoEncontrado(f"No existe el estudiante {estudiante_id}")
+
+    asignado = db.scalar(
+        select(ProfesorCurso.profesor_id).where(
+            ProfesorCurso.profesor_id == profesor_id,
+            ProfesorCurso.curso_id == estudiante.curso_id,
+        )
+    )
+    if asignado is None:
+        raise Prohibido("No tienes asignado el curso de este estudiante")
+
+    tutor = _tutores_detalle(db, [estudiante_id]).get(estudiante_id)
+    if tutor is None:
+        raise NoEncontrado("El estudiante no tiene un tutor confirmado")
+
+    hoy = qr_service.ahora_local().date()
+    parametros = _parametros(db)
+    riesgo = _calcular_riesgo(db, estudiantes=[estudiante], hasta=hoy)[estudiante_id]
+    mensaje = (
+        f"Alerta de asistencia de {_nombre(estudiante)}: "
+        f"{riesgo.faltas_consecutivas} faltas consecutivas y "
+        f"{riesgo.tardanzas_mes} tardanzas en el mes. "
+        f"El profesor asesor solicita contactarse con el colegio. "
+        f"Umbrales: {parametros.umbral_alerta_faltas} faltas / "
+        f"{parametros.umbral_alerta_tardanzas} tardanzas."
+    )
+
+    notificacion = Notificacion(
+        usuario_id=tutor.tutor_id,
+        tipo="alerta",
+        canal="app",
+        mensaje=mensaje,
+        intentos=0,
+    )
+    db.add(notificacion)
+    db.flush()
+
+    audit.registrar(
+        db,
+        usuario_id=usuario_id,
+        accion="NOTIFICAR_TUTOR",
+        entidad="notificacion",
+        entidad_id=notificacion.id,
+        detalle={
+            "estudiante_id": estudiante_id,
+            "tutor_id": tutor.tutor_id,
+            "curso_id": estudiante.curso_id,
+        },
+        ip=ip,
+    )
+    db.commit()
+    db.refresh(notificacion)
+
+    return NotificacionTutorResponse(
+        notificacion_id=notificacion.id,
+        estudiante_id=estudiante_id,
+        tutor_id=tutor.tutor_id,
+        tutor_nombre=f"{tutor.nombres} {tutor.apellidos}".strip(),
+        mensaje=mensaje,
+        creada=True,
     )
 
 

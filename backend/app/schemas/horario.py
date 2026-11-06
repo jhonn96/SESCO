@@ -16,11 +16,15 @@ from app.schemas.common import APIModel
 from app.schemas.curso import CursoResponse
 from app.schemas.enums import DiaSemana
 from app.schemas.materia import MateriaResponse
+from app.schemas.profesor import ProfesorResponse
 
 
 class HorarioBase(APIModel):
     curso_id: int = Field(gt=0)
     materia_id: int = Field(gt=0)
+    profesor_id: int = Field(
+        gt=0, description="Profesor que dicta el bloque (usuario_id)"
+    )
     dia_semana: DiaSemana = Field(
         default=DiaSemana.LUNES,
         description="Día de la grilla semanal (lunes a viernes)",
@@ -49,6 +53,7 @@ class HorarioUpdate(APIModel):
 
     curso_id: int | None = Field(default=None, gt=0)
     materia_id: int | None = Field(default=None, gt=0)
+    profesor_id: int | None = Field(default=None, gt=0)
     dia_semana: DiaSemana | None = None
     hora_inicio: time | None = None
     hora_fin: time | None = None
@@ -57,6 +62,9 @@ class HorarioUpdate(APIModel):
 
 class HorarioResponse(HorarioBase):
     id: int
+    profesor: ProfesorResponse | None = Field(
+        default=None, description="Se incluye cuando la relación está cargada"
+    )
     materia: MateriaResponse | None = Field(
         default=None, description="Se incluye cuando la relación está cargada"
     )

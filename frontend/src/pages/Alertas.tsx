@@ -10,9 +10,12 @@ import {
   BellRing,
   CheckCheck,
   Clock3,
+  GraduationCap,
   ListFilter,
   RefreshCw,
   TrendingDown,
+  Trophy,
+  UserRound,
   UserX,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -23,8 +26,15 @@ import { TablaEstado } from '@/components/TablaEstado'
 import { TablaPaginacion } from '@/components/TablaPaginacion'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import {
+  Card,
+  CardAction,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Select } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
   TableBody,
@@ -44,11 +54,16 @@ import {
   listarAlertas,
   type TipoAlerta,
 } from '@/services/alertas'
+import {
+  obtenerRankingInasistencias,
+  type RankingInasistencia,
+} from '@/services/reportes'
 
 const TAMANO = 10
 
 type FiltroTipo = 'todas' | TipoAlerta
 type FiltroEstado = 'pendientes' | 'todas' | 'atendidas'
+type VistaAlertas = 'alertas' | 'ranking'
 
 interface EstiloTipo {
   etiqueta: string
@@ -88,6 +103,7 @@ const ESTADOS: { valor: FiltroEstado; etiqueta: string }[] = [
 ]
 
 export function Alertas() {
+  const [vista, setVista] = useState<VistaAlertas>('alertas')
   const [tipo, setTipo] = useState<FiltroTipo>('todas')
   const [estado, setEstado] = useState<FiltroEstado>('pendientes')
   const [pagina, setPagina] = useState(0)
@@ -177,6 +193,22 @@ export function Alertas() {
         }
       />
 
+      <Tabs
+        value={vista}
+        onValueChange={(valor) => setVista(valor as VistaAlertas)}
+      >
+        <TabsList>
+          <TabsTrigger value="alertas">
+            <BellRing aria-hidden="true" />
+            Alertas
+          </TabsTrigger>
+          <TabsTrigger value="ranking">
+            <Trophy aria-hidden="true" />
+            Ranking de inasistencias
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="alertas" className="space-y-6">
       <Card className="[--card-spacing:--spacing(4)] shadow-sm">
         <div className="flex flex-col gap-4 px-(--card-spacing) lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-2">
@@ -376,6 +408,184 @@ export function Alertas() {
           deshabilitado={consulta.isFetching}
         />
       </Card>
+        </TabsContent>
+
+        <TabsContent value="ranking" className="space-y-6">
+          <RankingInasistenciasPanel />
+        </TabsContent>
+      </Tabs>
     </DashboardShell>
+  )
+}
+
+function RankingInasistenciasPanel() {
+  const consulta = useQuery({
+    queryKey: ['reportes', 'ranking-inasistencias'],
+    queryFn: ({ signal }) => obtenerRankingInasistencias({}, signal),
+    placeholderData: keepPreviousData,
+  })
+
+  const filas = consulta.data?.estudiantes ?? []
+  const cargando = consulta.isLoading
+  const sinDatos = filas.length === 0 && !cargando && !consulta.isError
+
+  return (
+    <Card
+      className="gap-0 overflow-hidden [--card-spacing:0px] shadow-sm"
+      aria-busy={consulta.isFetching}
+    >
+      <CardHeader className="border-b border-border/70 px-4 py-4">
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Trophy className="size-5 text-primary" aria-hidden="true" />
+          Ranking de inasistencias
+        </CardTitle>
+        <CardDescription>
+          Estudiantes ordenados de mayor a menor cantidad de faltas en el mes.
+          {consulta.data
+            ? ` Del ${formatearFechaCorta(consulta.data.desde)} al ${formatearFechaCorta(consulta.data.hasta)}.`
+            : ''}
+        </CardDescription>
+        <CardAction className="flex items-center gap-2">
+          {consulta.data ? (
+            <Badge variant="info" className="h-8 px-3 text-sm">
+              {consulta.data.total_estudiantes}{' '}
+              {consulta.data.total_estudiantes === 1
+                ? 'estudiante'
+                : 'estudiantes'}
+            </Badge>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void consulta.refetch()}
+            disabled={consulta.isFetching}
+          >
+            <RefreshCw
+              className={cn('size-4', consulta.isFetching && 'animate-spin')}
+              aria-hidden="true"
+            />
+            Actualizar
+          </Button>
+        </CardAction>
+      </CardHeader>
+
+      {consulta.isError && filas.length > 0 ? (
+        <p className="border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-sm text-destructive">
+          No se pudo actualizar el ranking. Se muestran los últimos datos
+          disponibles.
+        </p>
+      ) : null}
+
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/40 hover:bg-muted/40">
+            <TableHead className="w-14 px-4">#</TableHead>
+            <TableHead>Estudiante</TableHead>
+            <TableHead>Curso</TableHead>
+            <TableHead>Total de faltas</TableHead>
+            <TableHead>Total de tardanzas</TableHead>
+            <TableHead className="px-4">Tutor</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <TablaEstado
+            columnas={6}
+            cargando={cargando}
+            error={
+              consulta.isError && filas.length === 0
+                ? mensajeDeError(consulta.error)
+                : null
+            }
+            onReintentar={() => void consulta.refetch()}
+            vacio={sinDatos}
+            tituloVacio="No hay inasistencias en el mes"
+            descripcionVacio="Cuando se registren faltas o tardanzas, los estudiantes aparecerán en este ranking."
+            iconoVacio={Trophy}
+          />
+
+          {filas.map((fila, indice) => (
+            <FilaRanking key={fila.usuario_id} fila={fila} posicion={indice + 1} />
+          ))}
+        </TableBody>
+      </Table>
+    </Card>
+  )
+}
+
+function FilaRanking({
+  fila,
+  posicion,
+}: {
+  fila: RankingInasistencia
+  posicion: number
+}) {
+  const iniciales = `${fila.nombres[0] ?? ''}${fila.apellidos[0] ?? ''}`.toUpperCase()
+
+  return (
+    <TableRow>
+      <TableCell className="px-4">
+        <span className="flex size-8 items-center justify-center rounded-full bg-muted text-xs font-semibold tabular-nums text-muted-foreground">
+          {posicion}
+        </span>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+            {iniciales || <UserRound className="size-4" aria-hidden="true" />}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate font-medium">
+              {fila.nombres} {fila.apellidos}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {fila.ci ? `CI ${fila.ci}` : 'Sin CI registrado'}
+            </p>
+          </div>
+        </div>
+      </TableCell>
+      <TableCell>
+        {fila.curso ? (
+          <>
+            <p className="flex items-center gap-1.5 font-medium">
+              <GraduationCap className="size-4 text-primary" aria-hidden="true" />
+              {etiquetaCortaCurso(fila.curso)}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {nombreNivel(fila.curso.nivel)} · {nombreTurno(fila.curso.turno)}
+            </p>
+          </>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell>
+        <Badge variant={fila.faltas > 0 ? 'destructive' : 'muted'}>
+          <UserX aria-hidden="true" />
+          {fila.faltas} {fila.faltas === 1 ? 'falta' : 'faltas'}
+        </Badge>
+      </TableCell>
+      <TableCell>
+        <Badge variant={fila.tardanzas > 0 ? 'warning' : 'muted'}>
+          <Clock3 aria-hidden="true" />
+          {fila.tardanzas} {fila.tardanzas === 1 ? 'tardanza' : 'tardanzas'}
+        </Badge>
+      </TableCell>
+      <TableCell className="px-4">
+        {fila.tutor_nombre ? (
+          <>
+            <p className="font-medium">{fila.tutor_nombre}</p>
+            {fila.tutor ? (
+              <p className="text-xs text-muted-foreground">
+                {fila.tutor.parentesco}
+                {fila.tutor.telefono ? ` · ${fila.tutor.telefono}` : ''}
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <span className="text-sm text-muted-foreground">Sin tutor</span>
+        )}
+      </TableCell>
+    </TableRow>
   )
 }

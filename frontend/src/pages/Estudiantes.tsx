@@ -6,10 +6,20 @@ import {
   tableFeatures,
   useTable,
 } from '@tanstack/react-table'
-import { RefreshCw, Search, Users, X, Undo2, Plus, Pencil } from 'lucide-react'
+import {
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  Undo2,
+  Users,
+  X,
+} from 'lucide-react'
 
 import { DashboardShell } from '@/components/DashboardShell'
 import { EditarEstudianteDialog } from '@/components/EditarEstudianteDialog'
+import { EstadoUsuarioDialog } from '@/components/EstadoUsuarioDialog'
 import { NuevoEstudianteDialog } from '@/components/NuevoEstudianteDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { TablaEstado } from '@/components/TablaEstado'
@@ -35,8 +45,10 @@ import {
   nombreTurno,
 } from '@/lib/cursos'
 import { mensajeDeError } from '@/lib/errores'
+import { estadoDeUsuario } from '@/lib/estado-usuario'
 import { inicialesPersona, nombreCompleto } from '@/lib/personas'
 import { cn } from '@/lib/utils'
+import type { Usuario } from '@/services/auth'
 import { listarCursos } from '@/services/cursos'
 import { listarEstudiantes, type Estudiante } from '@/services/estudiantes'
 
@@ -47,21 +59,10 @@ const FEATURES = tableFeatures({ rowPaginationFeature })
 const helper = createColumnHelper<typeof FEATURES, Estudiante>()
 const ESTUDIANTES_VACIOS: Estudiante[] = []
 
-function estadoEstudiante(estudiante: Estudiante) {
-  if (!estudiante.usuario) {
-    return { etiqueta: 'Sin usuario', variante: 'muted' as const }
-  }
-  if (!estudiante.usuario.activo) {
-    return { etiqueta: 'Inactivo', variante: 'destructive' as const }
-  }
-  const bloqueo = estudiante.usuario.bloqueado_hasta
-  if (bloqueo && new Date(bloqueo).getTime() > Date.now()) {
-    return { etiqueta: 'Bloqueado', variante: 'warning' as const }
-  }
-  return { etiqueta: 'Activo', variante: 'success' as const }
-}
-
-const columnas = (onEditar: (estudiante: Estudiante) => void) =>
+const columnas = (
+  onEditar: (estudiante: Estudiante) => void,
+  onGestionarEstado: (usuario: Usuario) => void,
+) =>
   helper.columns([
     helper.display({
       id: 'nombre',
@@ -108,7 +109,7 @@ const columnas = (onEditar: (estudiante: Estudiante) => void) =>
       id: 'estado',
       header: 'Estado',
       cell: ({ row }) => {
-        const estado = estadoEstudiante(row.original)
+        const estado = estadoDeUsuario(row.original.usuario)
         return <Badge variant={estado.variante}>{estado.etiqueta}</Badge>
       },
     }),
@@ -120,16 +121,30 @@ const columnas = (onEditar: (estudiante: Estudiante) => void) =>
           nombreCompleto(row.original.usuario) ||
           `Estudiante #${row.original.usuario_id}`
         return (
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            aria-label={`Editar a ${nombre}`}
-            title="Editar estudiante"
-            onClick={() => onEditar(row.original)}
-          >
-            <Pencil aria-hidden="true" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {row.original.usuario ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                aria-label={`Gestionar estado de ${nombre}`}
+                title="Gestionar estado"
+                onClick={() => onGestionarEstado(row.original.usuario!)}
+              >
+                <ShieldAlert aria-hidden="true" />
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label={`Editar a ${nombre}`}
+              title="Editar estudiante"
+              onClick={() => onEditar(row.original)}
+            >
+              <Pencil aria-hidden="true" />
+            </Button>
+          </div>
         )
       },
     }),
@@ -144,6 +159,7 @@ export function Estudiantes() {
   const [estudianteAEditar, setEstudianteAEditar] = useState<Estudiante | null>(
     null,
   )
+  const [usuarioAEstado, setUsuarioAEstado] = useState<Usuario | null>(null)
 
   useEffect(() => {
     const temporizador = window.setTimeout(() => {
@@ -191,7 +207,11 @@ export function Estudiantes() {
   const sinDatos = estudiantes.length === 0 && !cargando && !consulta.isError
 
   const columnasTabla = useMemo(
-    () => columnas((estudiante) => setEstudianteAEditar(estudiante)),
+    () =>
+      columnas(
+        (estudiante) => setEstudianteAEditar(estudiante),
+        (usuario) => setUsuarioAEstado(usuario),
+      ),
     [],
   )
 
@@ -412,6 +432,17 @@ export function Estudiantes() {
           }}
           estudiante={estudianteAEditar}
           cursos={cursosOrdenados}
+        />
+      ) : null}
+
+      {usuarioAEstado ? (
+        <EstadoUsuarioDialog
+          key={usuarioAEstado.id}
+          abierto
+          onOpenChange={(abierto) => {
+            if (!abierto) setUsuarioAEstado(null)
+          }}
+          usuario={usuarioAEstado}
         />
       ) : null}
     </DashboardShell>

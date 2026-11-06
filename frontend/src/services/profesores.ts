@@ -1,5 +1,5 @@
 import { api, type PeticionPaginada } from './api'
-import type { RegistroAsistencia } from './asistencia'
+import type { EstadoAsistencia, RegistroAsistencia } from './asistencia'
 import type { Usuario } from './auth'
 import type { Curso } from './cursos'
 import type { Horario } from './horarios'
@@ -81,6 +81,57 @@ export function obtenerMiHorario(
   signal?: AbortSignal,
 ): Promise<Horario[]> {
   return api.get<Horario[]>('/profesores/mi-horario', { signal })
+}
+
+/** Día del mes en la lista mensual de asistencia. */
+export interface DiaListaAsistencia {
+  fecha: string
+  dia: number
+  dia_semana: string
+  es_clase: boolean
+}
+
+/** Estudiante con sus estados de asistencia indexados por fecha ISO. */
+export interface EstudianteListaAsistencia {
+  usuario_id: number
+  nombres: string
+  apellidos: string
+  ci: string
+  estados: Record<string, EstadoAsistencia>
+}
+
+/** Matriz mensual de asistencia de un curso y materia. */
+export interface ListaAsistencia {
+  mes: string
+  curso: Curso
+  materia: { id: number; nombre: string }
+  dias: DiaListaAsistencia[]
+  estudiantes: EstudianteListaAsistencia[]
+}
+
+export interface FiltrosListaAsistencia {
+  cursoId: number
+  materiaId: number
+  /** Mes en formato `AAAA-MM`. */
+  mes: string
+}
+
+/**
+ * GET /api/profesores/lista-asistencia (solo Profesor): matriz mensual del
+ * curso y materia indicados, con los estados de cada estudiante por día.
+ */
+export function obtenerListaAsistencia(
+  filtros: FiltrosListaAsistencia,
+  signal?: AbortSignal,
+): Promise<ListaAsistencia> {
+  return api.get<ListaAsistencia>('/profesores/lista-asistencia', {
+    query: {
+      curso_id: filtros.cursoId,
+      materia_id: filtros.materiaId,
+      mes: filtros.mes,
+    },
+    signal,
+  })
 }
 
 /**

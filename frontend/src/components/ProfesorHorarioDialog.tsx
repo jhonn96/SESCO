@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   Clock3,
@@ -7,8 +7,11 @@ import {
   Inbox,
   Pencil,
   RefreshCw,
+  Trash2,
 } from 'lucide-react'
+import { toast } from 'sonner'
 
+import { ConfirmarEliminacionDialog } from '@/components/ConfirmarEliminacionDialog'
 import { EditarHorarioDialog } from '@/components/EditarHorarioDialog'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,10 +24,14 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { etiquetaCortaCurso } from '@/lib/cursos'
 import { mensajeDeError } from '@/lib/errores'
-import { DIAS_SEMANA, type DiaSemana } from '@/lib/horarios'
+import {
+  DIAS_SEMANA,
+  etiquetaDia,
+  type DiaSemana,
+} from '@/lib/horarios'
 import { nombreCompleto } from '@/lib/personas'
 import { cn } from '@/lib/utils'
-import type { Horario } from '@/services/horarios'
+import { eliminarHorario, type Horario } from '@/services/horarios'
 import {
   obtenerHorarioProfesor,
   type Profesor,
@@ -50,7 +57,11 @@ export function ProfesorHorarioDialog({
   onOpenChange,
   profesor,
 }: ProfesorHorarioDialogProps) {
+  const queryClient = useQueryClient()
   const [horarioAEditar, setHorarioAEditar] = useState<Horario | null>(null)
+  const [horarioAEliminar, setHorarioAEliminar] = useState<Horario | null>(
+    null,
+  )
 
   const nombre =
     nombreCompleto(profesor.usuario) || `Profesor #${profesor.usuario_id}`
@@ -89,8 +100,30 @@ export function ProfesorHorarioDialog({
     ]
   }, [bloques, horarioAEditar])
 
+  const eliminar = useMutation({
+    mutationFn: (horario: Horario) => eliminarHorario(horario.id),
+    onSuccess: (_datos, horario) => {
+      toast.success('Bloque eliminado correctamente', {
+        description: `${horario.materia?.nombre ?? 'Bloque'} · ${etiquetaDia(
+          horario.dia_semana,
+        )} ${horaCorta(horario.hora_inicio)}–${horaCorta(horario.hora_fin)}`,
+      })
+      void queryClient.invalidateQueries({ queryKey: ['horarios'] })
+      setHorarioAEliminar(null)
+    },
+    onError: (error) => {
+      toast.error('No se pudo eliminar el bloque de horario', {
+        description: mensajeDeError(
+          error,
+          'El bloque tiene asistencias registradas y no puede eliminarse.',
+        ),
+      })
+    },
+  })
+
   function cerrar() {
     setHorarioAEditar(null)
+    setHorarioAEliminar(null)
     onOpenChange(false)
   }
 
@@ -105,8 +138,8 @@ export function ProfesorHorarioDialog({
         <DialogHeader>
           <DialogTitle>Horario de {nombre}</DialogTitle>
           <DialogDescription>
-            Bloques semanales de los cursos asignados. Puedes editar la materia
-            o el horario de cada bloque sin salir del panel.
+            Bloques semanales de los cursos asignados. Puedes editar o eliminar
+            cada bloque sin salir del panel.
           </DialogDescription>
         </DialogHeader>
 
@@ -224,17 +257,31 @@ export function ProfesorHorarioDialog({
                                   <span className="truncate">{curso}</span>
                                 </p>
                               </div>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="xs"
-                                aria-label={`Editar ${materia} (${dia.etiqueta} ${horaCorta(bloque.hora_inicio)}–${horaCorta(bloque.hora_fin)})`}
-                                title="Editar bloque"
-                                onClick={() => setHorarioAEditar(bloque)}
-                              >
-                                <Pencil aria-hidden="true" />
-                                Editar
-                              </Button>
+                              <div className="flex shrink-0 items-center gap-1">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="xs"
+                                  aria-label={`Editar ${materia} (${dia.etiqueta} ${horaCorta(bloque.hora_inicio)}–${horaCorta(bloque.hora_fin)})`}
+                                  title="Editar bloque"
+                                  onClick={() => setHorarioAEditar(bloque)}
+                                >
+                                  <Pencil aria-hidden="true" />
+                                  Editar
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="xs"
+                                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  aria-label={`Eliminar ${materia} (${dia.etiqueta} ${horaCorta(bloque.hora_inicio)}–${horaCorta(bloque.hora_fin)})`}
+                                  title="Eliminar bloque"
+                                  onClick={() => setHorarioAEliminar(bloque)}
+                                >
+                                  <Trash2 aria-hidden="true" />
+                                  Eliminar
+                                </Button>
+                              </div>
                             </div>
 
                             <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground tabular-nums">
@@ -273,6 +320,36 @@ export function ProfesorHorarioDialog({
             diasConCierre={diasConCierre}
           />
         ) : null}
+
+        <ConfirmarEliminacionDialog
+          abierto={horarioAEliminar !== null}
+          onOpenChange={(valor) => {
+            if (!valor && !eliminar.isPending) setHorarioAEliminar(null)
+          }}
+          titulo="Eliminar bloque de horario"
+          textoConfirmar="Eliminar bloque"
+          pendiente={eliminar.isPending}
+          descripcion={
+            horarioAEliminar ? (
+              <>
+                ¿Estás seguro de que deseas eliminar este bloque de horario?
+                <br />
+                <strong>
+                  {horarioAEliminar.materia?.nombre ?? 'Bloque de clase'}
+                </strong>{' '}
+                · {etiquetaDia(horarioAEliminar.dia_semana)}{' '}
+                {horaCorta(horarioAEliminar.hora_inicio)}–
+                {horaCorta(horarioAEliminar.hora_fin)}.
+                <br />
+                Si ya tiene asistencias registradas, el sistema no permitirá
+                eliminarlo.
+              </>
+            ) : null
+          }
+          onConfirmar={() => {
+            if (horarioAEliminar) eliminar.mutate(horarioAEliminar)
+          }}
+        />
       </DialogContent>
     </Dialog>
   )

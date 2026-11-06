@@ -30,6 +30,7 @@ from app.api import estudiantes as estudiantes_router
 from app.api import horarios as horarios_router
 from app.api import justificaciones as justificaciones_router
 from app.api import materias as materias_router
+from app.api import notificaciones as notificaciones_router
 from app.api import periodos as periodos_router
 from app.api import profesor_curso as profesor_curso_router
 from app.api import profesores as profesores_router
@@ -172,6 +173,11 @@ app.include_router(
     configuracion_router.router,
     prefix=f"{settings.api_prefix}/configuracion",
     tags=["Configuración"],
+)
+app.include_router(
+    notificaciones_router.router,
+    prefix=f"{settings.api_prefix}/notificaciones",
+    tags=["Notificaciones"],
 )
 
 
