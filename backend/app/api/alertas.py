@@ -35,8 +35,8 @@ def _ip(request: Request) -> str | None:
     status_code=status.HTTP_200_OK,
     summary="Generar alertas y reportes pendientes (solo Director)",
     description=(
-        "Revisa las asistencias y crea: (1) alertas por 3 faltas consecutivas "
-        "o 5 tardanzas en el mes en el primer bloque, y (2) reportes de curso "
+        "Revisa las asistencias y crea: (1) alertas por 3 días consecutivos "
+        "con faltas o 5 tardanzas en el mes, y (2) reportes de curso "
         "cuando la inasistencia semanal supera el umbral configurado. "
         "Es idempotente: repetir la llamada el mismo día no duplica avisos. "
         "Puede programarse como tarea diaria."
@@ -80,9 +80,10 @@ def generar_alertas(
     response_model=RiesgoProfesorResponse,
     summary="Estudiantes en riesgo de mis cursos (solo Profesor)",
     description=(
-        "Calcula en tiempo real los estudiantes de los cursos asignados al "
-        "docente que alcanzan el umbral de 3 faltas consecutivas o 5 tardanzas "
-        "en el mes, con el tutor principal de cada uno."
+        "Calcula en tiempo real, desde la tabla ``asistencia``, los estudiantes "
+        "de los cursos asignados al docente que alcanzan el umbral de 3 días "
+        "consecutivos con faltas o 5 tardanzas en el mes, con el tutor "
+        "principal de cada uno."
     ),
 )
 def listar_riesgo_profesor(

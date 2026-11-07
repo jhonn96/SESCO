@@ -11,11 +11,15 @@ import {
   BarChart3,
   CalendarRange,
   Download,
+  FileText,
   GraduationCap,
+  LoaderCircle,
   RefreshCw,
   Undo2,
   Users,
 } from 'lucide-react'
+import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import { toast } from 'sonner'
 
 import { DashboardShell } from '@/components/DashboardShell'
@@ -49,7 +53,11 @@ import {
   nombreTurno,
 } from '@/lib/cursos'
 import { mensajeDeError } from '@/lib/errores'
-import { formatearFechaLarga, hoyIso } from '@/lib/fechas'
+import {
+  formatearFecha,
+  formatearFechaLarga,
+  hoyIso,
+} from '@/lib/fechas'
 import { etiquetaPeriodo, periodoVigente } from '@/lib/periodos'
 import { cn } from '@/lib/utils'
 import { listarCursos } from '@/services/cursos'
@@ -297,6 +305,246 @@ function exportarCsv(
   })
 }
 
+async function cargarLogo(): Promise<string | null> {
+  try {
+    const imagen = new Image()
+    imagen.src = '/favicon.svg'
+    await imagen.decode()
+
+    const canvas = document.createElement('canvas')
+    canvas.width = 96
+    canvas.height = 92
+    const contexto = canvas.getContext('2d')
+    if (!contexto) return null
+    contexto.drawImage(imagen, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL('image/png')
+  } catch {
+    return null
+  }
+}
+
+function fechaDeGeneracion(): string {
+  return new Intl.DateTimeFormat('es-BO', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+  }).format(new Date())
+}
+
+function nombreArchivoReporte(desde: string, hasta: string): string {
+  return `Reporte_General_Asistencia_${desde}_${hasta}.pdf`
+}
+
+interface DatosPdfReporte {
+  estudiantes: EstudianteReporte[]
+  desde: string
+  hasta: string
+  periodo: string
+  curso: string
+  resumen: ResumenEstados
+  porcentaje: number
+}
+
+async function generarReportePdf({
+  estudiantes,
+  desde,
+  hasta,
+  periodo,
+  curso,
+  resumen,
+  porcentaje,
+}: DatosPdfReporte): Promise<void> {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' })
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const margen = 12
+  const logo = await cargarLogo()
+
+  if (logo) {
+    doc.addImage(logo, 'PNG', margen, 9, 13, 12.5)
+  }
+
+  doc.setTextColor(35, 35, 45)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(13)
+  doc.text('UNIDAD EDUCATIVA SESCO', 29, 15)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  doc.setTextColor(105, 105, 120)
+  doc.text('Sistema de Control de Asistencia Escolar', 29, 20)
+
+  doc.setTextColor(35, 35, 45)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.text('Reporte General de Asistencia', pageWidth - margen, 15, {
+    align: 'right',
+  })
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(105, 105, 120)
+  doc.text(`Generado: ${fechaDeGeneracion()}`, pageWidth - margen, 20, {
+    align: 'right',
+  })
+
+  doc.setDrawColor(224, 218, 240)
+  doc.setLineWidth(0.4)
+  doc.line(margen, 26, pageWidth - margen, 26)
+
+  doc.setFillColor(248, 247, 252)
+  doc.roundedRect(margen, 31, pageWidth - margen * 2, 18, 3, 3, 'F')
+
+  doc.setFontSize(8)
+  doc.setTextColor(115, 110, 130)
+  doc.text('PERIODO', 16, 37)
+  doc.text('RANGO DE FECHAS', 96, 37)
+  doc.text('CURSO', 196, 37)
+
+  doc.setFontSize(10)
+  doc.setTextColor(35, 35, 45)
+  doc.setFont('helvetica', 'bold')
+  doc.text(periodo, 16, 43)
+  doc.text(`${formatearFecha(desde)} al ${formatearFecha(hasta)}`, 96, 43)
+  doc.text(curso, 196, 43)
+
+  const filas = estudiantes.map((estudiante) => [
+    estudiante.curso ? etiquetaCurso(estudiante.curso) : 'Sin curso',
+    `${estudiante.apellido_paterno} ${estudiante.apellido_materno} ${estudiante.nombres}`
+      .replace(/\s+/g, ' ')
+      .trim(),
+    estudiante.ci,
+    String(estudiante.presentes),
+    String(estudiante.tardanzas),
+    String(estudiante.faltas),
+    String(estudiante.justificadas),
+    `${estudiante.porcentaje_asistencia.toFixed(1).replace('.', ',')} %`,
+  ])
+
+  autoTable(doc, {
+    startY: 54,
+    head: [
+      [
+        'Curso',
+        'Apellidos y nombres',
+        'CI',
+        'Presentes',
+        'Tardanzas',
+        'Faltas',
+        'Justificados',
+        '% Asistencia',
+      ],
+    ],
+    body: filas,
+    theme: 'grid',
+    margin: { top: 20, right: margen, bottom: 20, left: margen },
+    styles: {
+      font: 'helvetica',
+      fontSize: 8.5,
+      cellPadding: 2.2,
+      textColor: [45, 45, 55],
+      lineColor: [228, 224, 238],
+      lineWidth: 0.2,
+    },
+    headStyles: {
+      fillColor: [109, 40, 217],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      halign: 'left',
+    },
+    alternateRowStyles: {
+      fillColor: [248, 246, 253],
+    },
+    columnStyles: {
+      0: { cellWidth: 42 },
+      1: { cellWidth: 82 },
+      2: { cellWidth: 24 },
+      3: { halign: 'center', cellWidth: 22 },
+      4: { halign: 'center', cellWidth: 22 },
+      5: { halign: 'center', cellWidth: 18 },
+      6: { halign: 'center', cellWidth: 24 },
+      7: { halign: 'right', cellWidth: 24 },
+    },
+  })
+
+  const finalY =
+    (
+      doc as jsPDF & {
+        lastAutoTable?: { finalY: number }
+      }
+    ).lastAutoTable?.finalY ?? 60
+
+  let y = finalY + 10
+  if (y > pageHeight - 34) {
+    doc.addPage()
+    y = 22
+  }
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  doc.setTextColor(35, 35, 45)
+  doc.text('Resumen general', margen, y)
+
+  y += 6
+  const resumenItems = [
+    { etiqueta: 'Estudiantes', valor: estudiantes.length, color: [45, 45, 55] },
+    { etiqueta: 'Presentes', valor: resumen.presentes, color: [22, 128, 57] },
+    { etiqueta: 'Tardanzas', valor: resumen.tardanzas, color: [180, 83, 9] },
+    { etiqueta: 'Faltas', valor: resumen.faltas, color: [185, 28, 28] },
+    {
+      etiqueta: 'Justificados',
+      valor: resumen.justificadas,
+      color: [109, 40, 217],
+    },
+    {
+      etiqueta: 'Asistencia',
+      valor: `${porcentaje.toFixed(1).replace('.', ',')} %`,
+      color: [45, 45, 55],
+    },
+  ] as const
+
+  const separacion = 4
+  const anchoCaja =
+    (pageWidth - margen * 2 - separacion * (resumenItems.length - 1)) /
+    resumenItems.length
+
+  resumenItems.forEach((item, indice) => {
+    const x = margen + indice * (anchoCaja + separacion)
+    doc.setFillColor(248, 247, 252)
+    doc.roundedRect(x, y, anchoCaja, 17, 2.5, 2.5, 'F')
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    doc.setTextColor(105, 105, 120)
+    doc.text(item.etiqueta, x + anchoCaja / 2, y + 6, { align: 'center' })
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(13)
+    doc.setTextColor(
+      item.color[0] as number,
+      item.color[1] as number,
+      item.color[2] as number,
+    )
+    doc.text(String(item.valor), x + anchoCaja / 2, y + 13, {
+      align: 'center',
+    })
+  })
+
+  const totalPaginas = doc.getNumberOfPages()
+  for (let pagina = 1; pagina <= totalPaginas; pagina += 1) {
+    doc.setPage(pagina)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    doc.setTextColor(140, 140, 155)
+    doc.text('SESCO · Unidad Educativa', margen, pageHeight - 7)
+    doc.text(
+      `Página ${pagina} de ${totalPaginas}`,
+      pageWidth - margen,
+      pageHeight - 7,
+      { align: 'right' },
+    )
+  }
+
+  doc.save(nombreArchivoReporte(desde, hasta))
+}
+
 interface ResumenKpiProps {
   etiqueta: string
   valor: number | string
@@ -333,6 +581,7 @@ export function Reportes() {
   const [cursoId, setCursoId] = useState<number | undefined>()
   const [periodoId, setPeriodoId] = useState<number | undefined>()
   const [pagina, setPagina] = useState(0)
+  const [generandoPdf, setGenerandoPdf] = useState(false)
 
   const rango = modo === 'mes' ? rangoDelMes(mes) : { desde, hasta }
   const rangoInvalido = modo === 'rango' && desde > hasta
@@ -464,6 +713,39 @@ export function Reportes() {
     ? resumenAsistencia(reporte.totales)
     : 0
 
+  const cursoSeleccionado = cursosOrdenados.find(
+    (curso) => curso.id === cursoId,
+  )
+  const cursoTxt = cursoSeleccionado
+    ? etiquetaCurso(cursoSeleccionado)
+    : 'Todos los cursos'
+  const periodoTxt = modo === 'mes' ? nombreMes(mes) : 'Rango de fechas'
+
+  async function descargarPdf() {
+    if (!reporte || estudiantes.length === 0) return
+    setGenerandoPdf(true)
+    try {
+      await generarReportePdf({
+        estudiantes,
+        desde: rango.desde,
+        hasta: rango.hasta,
+        periodo: periodoTxt,
+        curso: cursoTxt,
+        resumen: reporte.totales,
+        porcentaje: porcentajeGeneral,
+      })
+      toast.success('Reporte PDF generado', {
+        description: `${estudiantes.length} estudiantes incluidos en el archivo PDF.`,
+      })
+    } catch (error) {
+      toast.error('No se pudo generar el PDF', {
+        description: mensajeDeError(error),
+      })
+    } finally {
+      setGenerandoPdf(false)
+    }
+  }
+
   return (
     <DashboardShell seccion="Reportes">
       <PageHeader
@@ -478,6 +760,28 @@ export function Reportes() {
                 {reporte.total_estudiantes === 1 ? 'estudiante' : 'estudiantes'}
               </Badge>
             ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10"
+              onClick={() => void descargarPdf()}
+              disabled={
+                generandoPdf ||
+                estudiantes.length === 0 ||
+                consulta.isFetching ||
+                rangoInvalido
+              }
+            >
+              {generandoPdf ? (
+                <LoaderCircle
+                  className="size-4 animate-spin"
+                  aria-hidden="true"
+                />
+              ) : (
+                <FileText aria-hidden="true" />
+              )}
+              Exportar PDF
+            </Button>
             <Button
               type="button"
               variant="outline"

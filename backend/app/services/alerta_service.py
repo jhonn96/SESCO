@@ -2,12 +2,12 @@
 
 Reglas implementadas
 --------------------
-- **Alerta de faltas**: el estudiante acumula ``umbral_alerta_faltas`` (3) faltas
-  *consecutivas* en el primer bloque de su curso. La racha se mide sobre los
-  días escolares con registro (los fines de semana no existen en ``asistencia``
-  y por tanto no la cortan).
-- **Alerta de tardanzas**: ``umbral_alerta_tardanzas`` (5) tardanzas en el
-  primer bloque durante el mes en curso.
+- **Alerta de faltas**: el estudiante acumula ``umbral_alerta_faltas`` (3) días
+  consecutivos con al menos una falta registrada en cualquiera de los bloques
+  de su curso. La racha se mide sobre los días escolares con registro (los
+  fines de semana no existen en ``asistencia`` y por tanto no la cortan).
+- **Alerta de tardanzas**: ``umbral_alerta_tardanzas`` (5) tardanzas registradas
+  en el mes en curso, en cualquiera de los bloques del curso.
 - **Reporte de curso**: si el porcentaje de inasistencia de la semana en curso
   supera ``umbral_inasistencia_pct`` (15 %), se encola una notificación
   ``inasistencia`` a cada Director activo.
@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core import audit
@@ -35,7 +35,6 @@ from app.models import (
     Asistencia,
     Curso,
     Estudiante,
-    Horario,
     Notificacion,
     ParametroAsistencia,
     ProfesorCurso,
@@ -50,7 +49,7 @@ from app.schemas.alerta import (
     RiesgoProfesorResponse,
 )
 from app.schemas.curso import CursoResponse
-from app.schemas.enums import IDS_ROL, RolNombre, TipoAlerta
+from app.schemas.enums import EstadoAsistencia, IDS_ROL, RolNombre, TipoAlerta
 from app.schemas.estudiante import TutorACargoResponse
 from app.services import qr_service, reporte_service
 
@@ -87,7 +86,7 @@ class ResultadoGeneracion:
 
 @dataclass(frozen=True)
 class RiesgoAsistencia:
-    """Indicadores de riesgo calculados sobre el primer bloque del curso."""
+    """Indicadores de riesgo calculados sobre toda la asistencia del curso."""
 
     faltas_consecutivas: int
     tardanzas_mes: int
@@ -100,16 +99,6 @@ class RiesgoAsistencia:
 
 def _parametros(db: Session) -> ParametroAsistencia:
     return reporte_service.parametros(db)
-
-
-def _primer_bloque_por_curso(db: Session) -> dict[int, int]:
-    """``curso_id -> horario_id`` del primer bloque de la jornada."""
-    primeros: dict[int, int] = {}
-    for horario in db.scalars(
-        select(Horario).order_by(Horario.curso_id, Horario.hora_inicio, Horario.id)
-    ):
-        primeros.setdefault(horario.curso_id, horario.id)
-    return primeros
 
 
 def _directores_activos(db: Session) -> list[int]:
@@ -200,60 +189,123 @@ def _nombre(estudiante: Estudiante) -> str:
     return f"{estudiante.usuario.nombres} {estudiante.usuario.apellidos}".strip()
 
 
+def _notificados_hoy(
+    db: Session,
+    *,
+    estudiantes: dict[int, Estudiante],
+    tutores: dict[int, TutorACargoResponse],
+) -> set[int]:
+    """Estudiantes cuyo tutor principal ya recibió un aviso hoy.
+
+    Se apoya en ``notificacion`` y en el prefijo del mensaje que genera tanto
+    la alerta automática como el botón "Notificar al Tutor".
+    """
+    tutor_ids = {tutor.tutor_id for tutor in tutores.values()}
+    if not tutor_ids:
+        return set()
+
+    inicio = qr_service.ahora_local().replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    fin = inicio + timedelta(days=1)
+    filas = db.execute(
+        select(Notificacion.usuario_id, Notificacion.mensaje).where(
+            Notificacion.usuario_id.in_(tutor_ids),
+            Notificacion.tipo == "alerta",
+            Notificacion.creada_en >= inicio,
+            Notificacion.creada_en < fin,
+        )
+    ).all()
+
+    mensajes_por_tutor: dict[int, list[str]] = {}
+    for tutor_id, mensaje in filas:
+        mensajes_por_tutor.setdefault(tutor_id, []).append(mensaje or "")
+
+    notificados: set[int] = set()
+    for estudiante_id, tutor in tutores.items():
+        estudiante = estudiantes.get(estudiante_id)
+        if estudiante is None:
+            continue
+        prefijo = f"Alerta de asistencia de {_nombre(estudiante)}:"
+        if any(
+            mensaje.startswith(prefijo)
+            for mensaje in mensajes_por_tutor.get(tutor.tutor_id, [])
+        ):
+            notificados.add(estudiante_id)
+    return notificados
+
+
 # --------------------------------------------------------------------------
 # Alertas por estudiante (RF-06)
 # --------------------------------------------------------------------------
 
 
-def _registros_primer_bloque(
+def _registros_asistencia(
     db: Session,
     *,
     estudiante_ids: list[int],
-    horario_ids: list[int],
+    desde: date,
     hasta: date,
-) -> dict[int, list[tuple[date, str]]]:
-    """Asistencias del primer bloque por estudiante, de la más reciente a la más antigua."""
-    if not estudiante_ids or not horario_ids:
+) -> dict[int, list[tuple[date, bool, int]]]:
+    """Agrupa por día la asistencia de cada estudiante.
+
+    Devuelve, por estudiante, una lista ordenada de la fecha más reciente a la
+    más antigua con ``(fecha, tiene_falta, tardanzas_del_día)``. La agregación
+    se hace en SQL para no depender de la tabla ``alerta``.
+    """
+    if not estudiante_ids:
         return {}
+
+    falta_del_dia = func.max(
+        case((Asistencia.estado == EstadoAsistencia.FALTA.value, 1), else_=0)
+    ).label("tiene_falta")
+    tardanzas_del_dia = func.sum(
+        case((Asistencia.estado == EstadoAsistencia.TARDANZA.value, 1), else_=0)
+    ).label("tardanzas")
+
     filas = db.execute(
-        select(Asistencia.estudiante_id, Asistencia.fecha, Asistencia.estado)
+        select(
+            Asistencia.estudiante_id,
+            Asistencia.fecha,
+            falta_del_dia,
+            tardanzas_del_dia,
+        )
         .where(
             Asistencia.estudiante_id.in_(estudiante_ids),
-            Asistencia.horario_id.in_(horario_ids),
+            Asistencia.fecha >= desde,
             Asistencia.fecha <= hasta,
         )
+        .group_by(Asistencia.estudiante_id, Asistencia.fecha)
         .order_by(Asistencia.estudiante_id, Asistencia.fecha.desc())
     ).all()
 
-    registros: dict[int, list[tuple[date, str]]] = {i: [] for i in estudiante_ids}
-    for estudiante_id, fecha, estado in filas:
-        registros.setdefault(estudiante_id, []).append((fecha, estado))
+    registros: dict[int, list[tuple[date, bool, int]]] = {
+        i: [] for i in estudiante_ids
+    }
+    for estudiante_id, fecha, tiene_falta, tardanzas in filas:
+        registros.setdefault(estudiante_id, []).append(
+            (fecha, bool(tiene_falta), int(tardanzas or 0))
+        )
     return registros
 
 
-def _racha_faltas(registros: list[tuple[date, str]], *, hasta: date) -> int:
-    """Faltas consecutivas más recientes en el primer bloque."""
+def _racha_faltas(registros: list[tuple[date, bool, int]]) -> int:
+    """Días consecutivos con al menos una falta, desde el más reciente."""
     racha = 0
-    limite = hasta - timedelta(days=DIAS_RACHA)
-    for fecha, estado in registros:
-        if fecha > hasta:
-            continue
-        if fecha < limite:
+    for _fecha, tiene_falta, _tardanzas in registros:
+        if not tiene_falta:
             break
-        if estado == "falta":
-            racha += 1
-        elif estado in ("presente", "tardanza", "justificada"):
-            break
+        racha += 1
     return racha
 
 
 def _tardanzas_del_mes(
-    registros: list[tuple[date, str]], *, inicio_mes: date, hasta: date
+    registros: list[tuple[date, bool, int]], *, inicio_mes: date, hasta: date
 ) -> int:
     return sum(
-        1
-        for fecha, estado in registros
-        if estado == "tardanza" and inicio_mes <= fecha <= hasta
+        tardanzas
+        for fecha, _tiene_falta, tardanzas in registros
+        if inicio_mes <= fecha <= hasta
     )
 
 
@@ -263,27 +315,22 @@ def _calcular_riesgo(
     estudiantes: list[Estudiante],
     hasta: date,
 ) -> dict[int, RiesgoAsistencia]:
-    """Calcula faltas consecutivas y tardanzas mensuales del primer bloque."""
+    """Calcula en tiempo real faltas consecutivas y tardanzas mensuales."""
     if not estudiantes:
         return {}
 
-    primeros = _primer_bloque_por_curso(db)
     por_estudiante = {e.usuario_id: e for e in estudiantes}
-    horario_ids = sorted(
-        {primeros[e.curso_id] for e in estudiantes if e.curso_id in primeros}
-    )
-    registros = _registros_primer_bloque(
+    inicio_mes = hasta.replace(day=1)
+    desde = min(inicio_mes, hasta - timedelta(days=DIAS_RACHA))
+    registros = _registros_asistencia(
         db,
         estudiante_ids=list(por_estudiante),
-        horario_ids=horario_ids,
+        desde=desde,
         hasta=hasta,
     )
-    inicio_mes = hasta.replace(day=1)
     return {
         estudiante_id: RiesgoAsistencia(
-            faltas_consecutivas=_racha_faltas(
-                registros.get(estudiante_id, []), hasta=hasta
-            ),
+            faltas_consecutivas=_racha_faltas(registros.get(estudiante_id, [])),
             tardanzas_mes=_tardanzas_del_mes(
                 registros.get(estudiante_id, []),
                 inicio_mes=inicio_mes,
@@ -310,15 +357,15 @@ def _alertas_existentes(
 
 def _detalle_faltas(racha: int, umbral: int) -> str:
     return (
-        f"{racha} faltas consecutivas en el primer bloque "
-        f"(umbral: {umbral} faltas seguidas)."
+        f"{racha} días consecutivos con faltas registradas "
+        f"(umbral: {umbral} días seguidos)."
     )
 
 
 def _detalle_tardanzas(cantidad: int, umbral: int, hoy: date) -> str:
     mes = MESES[hoy.month - 1]
     return (
-        f"{cantidad} tardanzas en el primer bloque durante {mes} de {hoy.year} "
+        f"{cantidad} tardanzas registradas durante {mes} de {hoy.year} "
         f"(umbral: {umbral} tardanzas mensuales)."
     )
 
@@ -654,6 +701,10 @@ def riesgo_profesor(
     )
     riesgos = _calcular_riesgo(db, estudiantes=estudiantes, hasta=hoy)
     tutores = _tutores_detalle(db, [e.usuario_id for e in estudiantes])
+    por_estudiante = {e.usuario_id: e for e in estudiantes}
+    notificados_hoy = _notificados_hoy(
+        db, estudiantes=por_estudiante, tutores=tutores
+    )
 
     filas: list[EstudianteRiesgoResponse] = []
     for estudiante in estudiantes:
@@ -661,7 +712,7 @@ def riesgo_profesor(
         motivos: list[str] = []
         if riesgo.faltas_consecutivas >= umbral_faltas:
             motivos.append(
-                f"{riesgo.faltas_consecutivas} faltas consecutivas "
+                f"{riesgo.faltas_consecutivas} días consecutivos con faltas "
                 f"(umbral {umbral_faltas})"
             )
         if riesgo.tardanzas_mes >= umbral_tardanzas:
@@ -685,6 +736,7 @@ def riesgo_profesor(
                 umbral_tardanzas=umbral_tardanzas,
                 motivos=motivos,
                 tutor=tutores.get(estudiante.usuario_id),
+                notificado_hoy=estudiante.usuario_id in notificados_hoy,
             )
         )
 
@@ -733,7 +785,7 @@ def notificar_tutor(
     riesgo = _calcular_riesgo(db, estudiantes=[estudiante], hasta=hoy)[estudiante_id]
     mensaje = (
         f"Alerta de asistencia de {_nombre(estudiante)}: "
-        f"{riesgo.faltas_consecutivas} faltas consecutivas y "
+        f"{riesgo.faltas_consecutivas} días consecutivos con faltas y "
         f"{riesgo.tardanzas_mes} tardanzas en el mes. "
         f"El profesor asesor solicita contactarse con el colegio. "
         f"Umbrales: {parametros.umbral_alerta_faltas} faltas / "

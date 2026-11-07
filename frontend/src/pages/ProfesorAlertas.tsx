@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BellRing,
+  Check,
   Clock3,
   RefreshCw,
   Send,
@@ -60,11 +61,16 @@ export function ProfesorAlertas() {
   const sinDatos =
     estudiantes.length === 0 && !cargando && !consulta.isError
 
+  async function actualizar() {
+    await queryClient.invalidateQueries({ queryKey: ['alertas', 'profesor'] })
+    await consulta.refetch()
+  }
+
   return (
     <ProfesorShell seccion="Alertas de mis cursos">
       <PageHeader
         titulo="Alertas de asistencia"
-        descripcion="Estudiantes de tus cursos que alcanzaron 3 faltas consecutivas o 5 tardanzas en el mes. Puedes notificar al tutor principal para que se ponga en contacto con el colegio."
+        descripcion="Estudiantes de tus cursos que alcanzaron 3 días consecutivos con faltas o 5 tardanzas en el mes. Puedes notificar al tutor principal para que se ponga en contacto con el colegio."
         icono={BellRing}
         acciones={
           <>
@@ -80,7 +86,7 @@ export function ProfesorAlertas() {
               type="button"
               variant="outline"
               className="h-10"
-              onClick={() => void consulta.refetch()}
+              onClick={() => void actualizar()}
               disabled={consulta.isFetching}
             >
               <RefreshCw
@@ -255,24 +261,31 @@ function FilaRiesgo({
       </TableCell>
 
       <TableCell className="px-4 text-right">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={onNotificar}
-          disabled={!estudiante.tutor || notificando}
-          title={
-            estudiante.tutor
-              ? undefined
-              : 'El estudiante no tiene un tutor confirmado'
-          }
-        >
-          <Send
-            className={cn('size-4', notificando && 'animate-pulse')}
-            aria-hidden="true"
-          />
-          Notificar al Tutor
-        </Button>
+        {estudiante.notificado_hoy ? (
+          <Badge variant="success" className="h-8 px-3">
+            <Check aria-hidden="true" />
+            Notificado
+          </Badge>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={onNotificar}
+            disabled={!estudiante.tutor || notificando}
+            title={
+              estudiante.tutor
+                ? undefined
+                : 'El estudiante no tiene un tutor confirmado'
+            }
+          >
+            <Send
+              className={cn('size-4', notificando && 'animate-pulse')}
+              aria-hidden="true"
+            />
+            Notificar al Tutor
+          </Button>
+        )}
       </TableCell>
     </TableRow>
   )

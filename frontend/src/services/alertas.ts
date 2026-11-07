@@ -75,6 +75,7 @@ export interface EstudianteRiesgo {
   umbral_tardanzas: number
   motivos: string[]
   tutor: TutorAlerta | null
+  notificado_hoy: boolean
 }
 
 /** Respuesta de `GET /api/alertas/profesor` (solo Profesor). */

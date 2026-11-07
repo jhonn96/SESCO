@@ -12,6 +12,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar'
 import { useAuth } from '@/hooks/use-auth'
+import { useNotificacionesRealtime } from '@/hooks/use-notificaciones-realtime'
 import { ETIQUETA_ROL, nombreRol } from '@/lib/roles'
 
 interface DashboardShellProps {
@@ -28,6 +29,8 @@ export function DashboardShell({ seccion, children }: DashboardShellProps) {
   const { usuario, cerrarSesion } = useAuth()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+
+  useNotificacionesRealtime()
 
   const rol = nombreRol(usuario)
   const rolLabel = rol ? ETIQUETA_ROL[rol] : 'Sin rol'

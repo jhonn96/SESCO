@@ -64,6 +64,7 @@ class EstudianteRiesgoResponse(APIModel):
     umbral_tardanzas: int
     motivos: list[str] = Field(default_factory=list)
     tutor: TutorACargoResponse | None = None
+    notificado_hoy: bool = False
 
 
 class RiesgoProfesorResponse(APIModel):

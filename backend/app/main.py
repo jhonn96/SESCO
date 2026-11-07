@@ -9,6 +9,7 @@ Documentación interactiva: http://127.0.0.1:8000/docs
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Literal
@@ -40,6 +41,7 @@ from app.api import tutorias as tutorias_router
 from app.api import tutores as tutores_router
 from app.api import usuarios as usuarios_router
 from app import scheduler
+from app.core import realtime
 from app.core.config import settings
 from app.core.database import engine
 from app.core.exceptions import ErrorDominio
@@ -55,10 +57,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning(
             "JWT_SECRET sigue con el valor por defecto; configure uno propio en backend/.env"
         )
+    realtime.gestor.vincular_loop(asyncio.get_running_loop())
     tareas = scheduler.iniciar()
     try:
         yield
     finally:
+        realtime.gestor.desvincular_loop()
         await scheduler.detener(tareas)
         engine.dispose()
 
