@@ -20,6 +20,7 @@ import { ProfesorAlertas } from '@/pages/ProfesorAlertas'
 import { ProfesorDashboard } from '@/pages/ProfesorDashboard'
 import { ProfesorHorario } from '@/pages/ProfesorHorario'
 import { ProfesorListaAsistencia } from '@/pages/ProfesorListaAsistencia'
+import { ProfesorMisEstudiantes } from '@/pages/ProfesorMisEstudiantes'
 import { Profesores } from '@/pages/Profesores'
 import { Reportes } from '@/pages/Reportes'
 import { TutorAsistencia } from '@/pages/TutorAsistencia'
@@ -66,6 +67,10 @@ export default function App() {
       <Route element={<ProtectedRoute rol="profesor" />}>
         <Route path="/profesor" element={<ProfesorDashboard />} />
         <Route path="/profesor/alertas" element={<ProfesorAlertas />} />
+        <Route
+          path="/profesor/estudiantes"
+          element={<ProfesorMisEstudiantes />}
+        />
         <Route path="/profesor/horario" element={<ProfesorHorario />} />
         <Route
           path="/profesor/lista-asistencia"

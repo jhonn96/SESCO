@@ -133,6 +133,14 @@ export function posicionEnColegio(ahora: Date = new Date()): PosicionColegio {
   }
 }
 
+/** Hora actual en formato "HH:MM" según la zona del colegio. */
+export function horaActualEnColegio(ahora: Date = new Date()): string {
+  const { minutos } = posicionEnColegio(ahora)
+  const horas = Math.floor(minutos / 60)
+  const resto = minutos % 60
+  return `${String(horas).padStart(2, '0')}:${String(resto).padStart(2, '0')}`
+}
+
 /** Hora "HH:MM" de un instante ISO en la zona del colegio. */
 export function formatearHoraEnColegio(iso: string): string {
   return new Intl.DateTimeFormat(ZONA, {

@@ -39,6 +39,7 @@ from app.api import roles as roles_router
 from app.api import tutorias as tutorias_router
 from app.api import tutores as tutores_router
 from app.api import usuarios as usuarios_router
+from app import scheduler
 from app.core.config import settings
 from app.core.database import engine
 from app.core.exceptions import ErrorDominio
@@ -49,13 +50,17 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Avisa de configuraciones inseguras y cierra el pool al apagar."""
+    """Avisa de configuraciones inseguras, arranca tareas y cierra el pool."""
     if settings.jwt_secret == "cambiar-en-produccion":
         logger.warning(
             "JWT_SECRET sigue con el valor por defecto; configure uno propio en backend/.env"
         )
-    yield
-    engine.dispose()
+    tareas = scheduler.iniciar()
+    try:
+        yield
+    finally:
+        await scheduler.detener(tareas)
+        engine.dispose()
 
 
 app = FastAPI(

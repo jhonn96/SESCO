@@ -168,6 +168,57 @@ class CierreBloqueResponse(APIModel):
     notificaciones_encoladas: int
 
 
+class CierreJornadaResponse(APIModel):
+    """Resultado del cierre automático de jornada (salidas sin escaneo)."""
+
+    fecha: date
+    bloques_procesados: int
+    salidas_registradas: int
+    notificaciones_encoladas: int
+
+
+class SalidaManualRequest(APIModel):
+    """Salida manual de un registro; si se omite, se usa la hora actual."""
+
+    hora_salida: time | None = Field(
+        default=None,
+        description=(
+            "Hora de salida (HH:MM o HH:MM:SS). Si se omite, se usa la hora "
+            "actual del colegio."
+        ),
+        examples=["14:35"],
+    )
+
+
+class SalidaMasivaRequest(APIModel):
+    """Salida de todos los presentes de un curso en la fecha actual."""
+
+    curso_id: int = Field(gt=0)
+    hora_salida: time | None = Field(
+        default=None,
+        description=(
+            "Hora de salida (HH:MM o HH:MM:SS). Si se omite, se usa la hora "
+            "actual del colegio."
+        ),
+        examples=["14:35"],
+    )
+
+
+class SalidaMasivaResponse(APIModel):
+    """Resultado de registrar la salida de un curso completo."""
+
+    curso_id: int
+    fecha: date
+    hora_salida: datetime
+    estudiantes: int = Field(
+        ge=0, description="Estudiantes a los que se les registró la salida"
+    )
+    salidas_registradas: int = Field(
+        ge=0, description="Registros de asistencia actualizados"
+    )
+    notificaciones_encoladas: int = Field(ge=0)
+
+
 # --------------------------------------------------------------------------
 # Panel del estudiante autenticado
 # --------------------------------------------------------------------------

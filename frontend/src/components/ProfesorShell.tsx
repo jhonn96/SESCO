@@ -9,6 +9,7 @@ import {
   ListChecks,
   QrCode,
   UserPlus,
+  Users,
 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -175,6 +176,7 @@ function MenuProfesor({
 
   const enPanel = pathname === '/profesor' && hash !== '#registros'
   const enRegistros = pathname === '/profesor' && hash === '#registros'
+  const enEstudiantes = pathname === '/profesor/estudiantes'
   const enLista = pathname === '/profesor/lista-asistencia'
   const enAlertas = pathname === '/profesor/alertas'
   const enHorario = pathname === '/profesor/horario'
@@ -218,6 +220,23 @@ function MenuProfesor({
                 >
                   <ClipboardList aria-hidden="true" />
                   <span>Registros de hoy</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={enEstudiantes}
+                tooltip="Mis estudiantes"
+              >
+                <Link
+                  to="/profesor/estudiantes"
+                  onClick={cerrarMenuMovil}
+                  aria-current={enEstudiantes ? 'page' : undefined}
+                >
+                  <Users aria-hidden="true" />
+                  <span>Mis estudiantes</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

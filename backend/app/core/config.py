@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     # --- SQLAlchemy ---
     sql_echo: bool = False
 
+    # --- Tareas programadas ---
+    cierre_jornada_automatico: bool = True
+    cierre_jornada_intervalo_min: int = Field(default=15, ge=1)
+
     @property
     def database_url(self) -> str:
         """URL de conexión para SQLAlchemy con credenciales escapadas."""

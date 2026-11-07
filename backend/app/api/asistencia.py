@@ -1,9 +1,9 @@
-"""Router de asistencia: QR dinámico, escaneo, registro manual y cierre.
+"""Router de asistencia: QR dinámico, escaneo, registro manual y salidas.
 
 Permisos:
 - ``GET /qr``: solo el estudiante autenticado (su propio código).
 - ``POST /escanear``: Director y Profesor (portería y docentes).
-- ``POST /manual`` y ``POST /cerrar-bloque``: Director y Profesor.
+- ``POST /manual``, ``POST /cerrar-bloque`` y salidas: Director y Profesor.
 - Listado y detalle: Director y Profesor.
 """
 
@@ -14,6 +14,7 @@ from datetime import date
 from fastapi import APIRouter, Query, Request, Response, status
 
 from app.api.deps import (
+    CurrentDirector,
     CurrentDirectorOProfesor,
     CurrentEstudiante,
     DbSession,
@@ -25,11 +26,15 @@ from app.schemas.asistencia import (
     AsistenciaResponse,
     CierreBloqueRequest,
     CierreBloqueResponse,
+    CierreJornadaResponse,
     EscaneoRequest,
     QrResponse,
+    SalidaManualRequest,
+    SalidaMasivaRequest,
+    SalidaMasivaResponse,
 )
 from app.schemas.enums import EstadoAsistencia, RolNombre
-from app.services import asistencia_service
+from app.services import asistencia_service, jornada_service, salida_service
 
 router = APIRouter()
 
@@ -38,7 +43,9 @@ def _ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def _respuesta(resultado: asistencia_service.ResultadoRegistro) -> dict:
+def _respuesta(
+    resultado: asistencia_service.ResultadoRegistro | salida_service.ResultadoSalida,
+) -> dict:
     base = AsistenciaResponse.model_validate(resultado.asistencia).model_dump()
     base["notificacion_encolada"] = resultado.notificacion_encolada
     return base
@@ -151,6 +158,104 @@ def cerrar_bloque(
         ip=_ip(request),
     )
     return CierreBloqueResponse.model_validate(resultado)
+
+
+@router.patch(
+    "/{asistencia_id}/salida-manual",
+    response_model=AsistenciaRegistroResponse,
+    summary="Registrar la salida de un estudiante (Director y Profesor)",
+    description=(
+        "Registra la salida de un registro con ingreso y sin salida. Si no "
+        "se envía ``hora_salida`` se usa la hora actual del colegio. El tutor "
+        "principal recibe una notificación y la acción queda en la bitácora. "
+        "Un profesor solo puede operar sobre sus cursos."
+    ),
+    responses={
+        404: {"description": "La asistencia no existe"},
+        409: {"description": "La salida ya estaba registrada"},
+        422: {"description": "Sin ingreso, hora inválida o fecha distinta a hoy"},
+    },
+)
+def registrar_salida_manual(
+    asistencia_id: int,
+    datos: SalidaManualRequest,
+    db: DbSession,
+    usuario: CurrentDirectorOProfesor,
+    request: Request,
+) -> dict:
+    resultado = salida_service.registrar_salida_manual(
+        db,
+        asistencia_id=asistencia_id,
+        hora_salida=datos.hora_salida,
+        profesor_id=usuario.id,
+        es_profesor=usuario.rol.nombre == RolNombre.PROFESOR.value,
+        ip=_ip(request),
+    )
+    return _respuesta(resultado)
+
+
+@router.post(
+    "/salida-masiva",
+    response_model=SalidaMasivaResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Registrar la salida de todo un curso (Director y Profesor)",
+    description=(
+        "Busca a los estudiantes del curso con ingreso de hoy y sin salida, "
+        "les registra la misma hora de salida y notifica a sus tutores. Si no "
+        "se envía ``hora_salida`` se usa la hora actual del colegio. Un "
+        "profesor solo puede operar sobre sus cursos."
+    ),
+    responses={
+        404: {"description": "El curso no existe"},
+        422: {"description": "Hora inválida o anterior a algún ingreso"},
+    },
+)
+def registrar_salida_masiva(
+    datos: SalidaMasivaRequest,
+    db: DbSession,
+    usuario: CurrentDirectorOProfesor,
+    request: Request,
+) -> SalidaMasivaResponse:
+    resultado = salida_service.registrar_salida_masiva(
+        db,
+        curso_id=datos.curso_id,
+        hora_salida=datos.hora_salida,
+        profesor_id=usuario.id,
+        es_profesor=usuario.rol.nombre == RolNombre.PROFESOR.value,
+        ip=_ip(request),
+    )
+    return SalidaMasivaResponse.model_validate(resultado)
+
+
+@router.post(
+    "/cierre-jornada",
+    response_model=CierreJornadaResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Ejecutar el cierre automático de jornada (solo Director)",
+    description=(
+        "Registra la salida de los estudiantes que ingresaron pero no tienen "
+        "hora_salida, usando la hora_fin de los bloques marcados como cierre "
+        "(es_ultimo_bloque) que ya finalizaron, y notifica a sus tutores. "
+        "La tarea se ejecuta sola cada 15 minutos; este endpoint permite "
+        "forzarla manualmente."
+    ),
+)
+def cierre_jornada(
+    db: DbSession,
+    director: CurrentDirector,
+    request: Request,
+    fecha: date | None = Query(
+        default=None,
+        description="Fecha a cerrar; por defecto, la fecha actual del colegio",
+    ),
+) -> CierreJornadaResponse:
+    resultado = jornada_service.cerrar_jornada(
+        db,
+        fecha=fecha,
+        usuario_id=director.id,
+        ip=_ip(request),
+    )
+    return CierreJornadaResponse.model_validate(resultado)
 
 
 @router.get(

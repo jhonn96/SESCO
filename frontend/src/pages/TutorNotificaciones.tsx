@@ -10,6 +10,7 @@ import {
   FileEdit,
   Inbox,
   LoaderCircle,
+  LogOut,
   RefreshCw,
   XCircle,
   type LucideIcon,
@@ -48,6 +49,7 @@ const ESTILO_TIPO: Record<
 > = {
   falta: { etiqueta: 'Falta', variante: 'destructive', icono: XCircle },
   tardanza: { etiqueta: 'Tardanza', variante: 'warning', icono: Clock3 },
+  salida: { etiqueta: 'Salida', variante: 'info', icono: LogOut },
   justificacion: {
     etiqueta: 'Justificación',
     variante: 'success',
@@ -164,7 +166,7 @@ export function TutorNotificaciones() {
     <DashboardShell seccion="Notificaciones">
       <PageHeader
         titulo="Notificaciones"
-        descripcion="Consulta los avisos de asistencia y las respuestas a tus justificaciones. Se actualiza automáticamente cada 30 segundos."
+        descripcion="Consulta los avisos de asistencia (faltas, tardanzas y salidas) y las respuestas a tus justificaciones. Se actualiza automáticamente cada 30 segundos."
         icono={BellRing}
         acciones={
           <>
@@ -284,7 +286,7 @@ export function TutorNotificaciones() {
               <p className="max-w-md text-sm text-muted-foreground">
                 {soloNoLeidas
                   ? 'Todas tus notificaciones están al día.'
-                  : 'Aquí aparecerán las faltas, tardanzas y respuestas a tus justificaciones.'}
+                  : 'Aquí aparecerán las faltas, tardanzas, salidas y respuestas a tus justificaciones.'}
               </p>
             </CardContent>
           </Card>

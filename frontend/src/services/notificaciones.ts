@@ -19,7 +19,7 @@ export interface Notificacion {
 export interface FiltrosNotificaciones {
   /** Solo las que aún no se han leído. */
   soloNoLeidas?: boolean
-  /** Tipo de origen: `falta`, `tardanza`, `justificacion`, etc. */
+  /** Tipo de origen: `falta`, `tardanza`, `salida`, `justificacion`, etc. */
   tipo?: string
   skip?: number
   limit?: number

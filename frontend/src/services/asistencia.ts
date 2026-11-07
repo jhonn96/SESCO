@@ -123,6 +123,47 @@ export function cerrarBloque(
   })
 }
 
+/**
+ * PATCH /api/asistencia/{id}/salida-manual (Director y Profesor): registra
+ * la salida de un estudiante. Si se omite `horaSalida`, el backend usa la
+ * hora actual del colegio.
+ */
+export function registrarSalidaManual(
+  asistenciaId: number,
+  horaSalida?: string,
+): Promise<RegistroAsistenciaCreado> {
+  return api.patch<RegistroAsistenciaCreado>(
+    `/asistencia/${asistenciaId}/salida-manual`,
+    { hora_salida: horaSalida },
+  )
+}
+
+/** Resultado de la salida masiva de un curso. */
+export interface SalidaMasivaResultado {
+  curso_id: number
+  fecha: string
+  hora_salida: string
+  /** Estudiantes a los que se les registró la salida. */
+  estudiantes: number
+  /** Registros de asistencia actualizados (puede haber varios por estudiante). */
+  salidas_registradas: number
+  notificaciones_encoladas: number
+}
+
+/**
+ * POST /api/asistencia/salida-masiva (Director y Profesor): registra la
+ * misma hora de salida para todos los presentes del curso.
+ */
+export function registrarSalidaMasiva(
+  cursoId: number,
+  horaSalida?: string,
+): Promise<SalidaMasivaResultado> {
+  return api.post<SalidaMasivaResultado>('/asistencia/salida-masiva', {
+    curso_id: cursoId,
+    hora_salida: horaSalida,
+  })
+}
+
 /** Código TOTP vigente del estudiante autenticado. */
 export interface CodigoQrEstudiante {
   estudiante_id: number

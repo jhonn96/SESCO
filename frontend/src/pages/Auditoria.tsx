@@ -70,6 +70,15 @@ const ACCIONES: Record<string, EstiloAccion> = {
     variante: 'info',
   },
   CERRAR_BLOQUE: { etiqueta: 'Cerrar bloque', variante: 'info' },
+  REGISTRAR_SALIDA: { etiqueta: 'Registrar salida', variante: 'info' },
+  REGISTRAR_SALIDA_MASIVA: {
+    etiqueta: 'Salida masiva del curso',
+    variante: 'warning',
+  },
+  CIERRE_JORNADA_AUTOMATICO: {
+    etiqueta: 'Cierre de jornada',
+    variante: 'info',
+  },
   GENERAR_ALERTAS: { etiqueta: 'Generar alertas', variante: 'warning' },
   ATENDER_ALERTA: { etiqueta: 'Atender alerta', variante: 'success' },
   ENVIAR_JUSTIFICACION: {
