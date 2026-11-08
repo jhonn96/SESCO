@@ -16,6 +16,7 @@ import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { DashboardShell } from '@/components/DashboardShell'
+import { SalidaGlobalDialog } from '@/components/SalidaGlobalDialog'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -227,6 +228,7 @@ export function DirectorDashboard() {
   const hoy = hoyIso()
   const [fecha, setFecha] = useState(hoy)
   const [periodoId, setPeriodoId] = useState<number | undefined>()
+  const [salidaGlobalAbierta, setSalidaGlobalAbierta] = useState(false)
 
   const rol = nombreRol(usuario)
   const rolLabel = rol ? ETIQUETA_ROL[rol] : 'Sin rol'
@@ -399,11 +401,13 @@ export function DirectorDashboard() {
                 >
                   Hoy
                 </Button>
-                <Button asChild className="h-10">
-                  <Link to="/director/control-jornada">
-                    <CalendarClock aria-hidden="true" />
-                    Programar Salida
-                  </Link>
+                <Button
+                  type="button"
+                  className="h-10"
+                  onClick={() => setSalidaGlobalAbierta(true)}
+                >
+                  <CalendarClock aria-hidden="true" />
+                  Programar Salida
                 </Button>
                 <Button
                   type="button"
@@ -638,6 +642,11 @@ export function DirectorDashboard() {
           </CardContent>
         </Card>
       ) : null}
+
+      <SalidaGlobalDialog
+        abierto={salidaGlobalAbierta}
+        onOpenChange={setSalidaGlobalAbierta}
+      />
     </DashboardShell>
   )
 }

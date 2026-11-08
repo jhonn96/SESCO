@@ -164,20 +164,45 @@ export function registrarSalidaMasiva(
   })
 }
 
+/** Resultado de una salida programada de uno o varios cursos. */
+export interface SalidaProgramadaResultado {
+  fecha: string
+  hora_salida: string
+  /** Cursos con estudiantes a los que se les registró la salida. */
+  cursos: number
+  curso_ids: number[]
+  /** Estudiantes a los que se les registró la salida. */
+  estudiantes: number
+  /** Registros de asistencia actualizados (puede haber varios por estudiante). */
+  salidas_registradas: number
+  notificaciones_encoladas: number
+}
+
+export interface ProgramarSalidaParams {
+  /** Un solo curso (flujo de Control de Jornada). */
+  cursoId?: number
+  /** Selección múltiple de cursos. */
+  cursoIds?: number[]
+  /** Aplica a todos los cursos del colegio. */
+  todos?: boolean
+  horaSalida?: string
+  motivo: string
+}
+
 /**
  * POST /api/asistencia/salida-programada (solo Director): registra una salida
- * especial del curso y envía el motivo a los tutores. La hora no puede ser
- * posterior a la actual.
+ * especial para uno, varios o todos los cursos y envía el motivo a los tutores.
+ * La hora no puede ser posterior a la actual.
  */
 export function programarSalida(
-  cursoId: number,
-  horaSalida: string | undefined,
-  motivo: string,
-): Promise<SalidaMasivaResultado> {
-  return api.post<SalidaMasivaResultado>('/asistencia/salida-programada', {
-    curso_id: cursoId,
-    hora_salida: horaSalida,
-    motivo,
+  datos: ProgramarSalidaParams,
+): Promise<SalidaProgramadaResultado> {
+  return api.post<SalidaProgramadaResultado>('/asistencia/salida-programada', {
+    curso_id: datos.cursoId,
+    curso_ids: datos.cursoIds,
+    todos: datos.todos ?? false,
+    hora_salida: datos.horaSalida,
+    motivo: datos.motivo,
   })
 }
 

@@ -54,6 +54,17 @@ class ResultadoSalidaMasiva:
     notificaciones_encoladas: int
 
 
+@dataclass(frozen=True)
+class ResultadoSalidaProgramada:
+    fecha: date
+    hora_salida: datetime
+    cursos: int
+    curso_ids: list[int]
+    estudiantes: int
+    salidas_registradas: int
+    notificaciones_encoladas: int
+
+
 def _cargar_asistencia(
     db: Session, asistencia_id: int, *, bloquear: bool = False
 ) -> Asistencia:
@@ -78,6 +89,40 @@ def _nombre_estudiante(estudiante: Estudiante) -> str:
     if usuario is None:
         return f"#{estudiante.usuario_id}"
     return f"{usuario.nombres} {usuario.apellidos}".strip()
+
+
+def _resolver_cursos_objetivo(
+    db: Session,
+    *,
+    curso_id: int | None,
+    curso_ids: list[int] | None,
+    todos: bool,
+) -> list[int]:
+    """Devuelve los IDs de curso a procesar, validando que existan."""
+    if todos:
+        return list(db.scalars(select(Curso.id).order_by(Curso.id)))
+
+    if curso_ids:
+        objetivos = sorted(set(curso_ids))
+    elif curso_id is not None:
+        objetivos = [curso_id]
+    else:
+        raise ReglaNegocio("Indica al menos un curso")
+
+    existentes = set(
+        db.scalars(select(Curso.id).where(Curso.id.in_(objetivos)))
+    )
+    faltantes = [
+        identificador
+        for identificador in objetivos
+        if identificador not in existentes
+    ]
+    if faltantes:
+        raise NoEncontrado(
+            "No existe(n) el/los curso(s) "
+            + ", ".join(str(identificador) for identificador in faltantes)
+        )
+    return objetivos
 
 
 def _validar_acceso_profesor(
@@ -323,6 +368,134 @@ def registrar_salida_masiva(
         curso_id=curso_id,
         fecha=fecha,
         hora_salida=salida,
+        estudiantes=len(por_estudiante),
+        salidas_registradas=len(registros),
+        notificaciones_encoladas=notificaciones,
+    )
+
+
+def registrar_salida_programada(
+    db: Session,
+    *,
+    curso_id: int | None = None,
+    curso_ids: list[int] | None = None,
+    todos: bool = False,
+    hora_salida: time | None = None,
+    motivo: str,
+    profesor_id: int | None = None,
+    ip: str | None = None,
+) -> ResultadoSalidaProgramada:
+    """Registra la misma salida especial en uno, varios o todos los cursos.
+
+    Solo se actualizan los estudiantes que hoy tienen ingreso y aún no tienen
+    salida. Cada estudiante recibe un único aviso para su tutor principal,
+    incluso si tiene varios bloques registrados en el día.
+    """
+    ahora = qr_service.ahora_local()
+    fecha = ahora.date()
+
+    objetivos = _resolver_cursos_objetivo(
+        db, curso_id=curso_id, curso_ids=curso_ids, todos=todos
+    )
+    salida = _resolver_hora_salida(fecha, hora_salida, ahora)
+
+    if not objetivos:
+        return ResultadoSalidaProgramada(
+            fecha=fecha,
+            hora_salida=salida,
+            cursos=0,
+            curso_ids=[],
+            estudiantes=0,
+            salidas_registradas=0,
+            notificaciones_encoladas=0,
+        )
+
+    registros = list(
+        db.scalars(
+            select(Asistencia)
+            .options(
+                selectinload(Asistencia.estudiante).selectinload(
+                    Estudiante.usuario
+                ),
+                selectinload(Asistencia.horario),
+            )
+            .where(
+                Asistencia.fecha == fecha,
+                Asistencia.hora_ingreso.is_not(None),
+                Asistencia.hora_salida.is_(None),
+                Asistencia.horario_id.in_(
+                    select(Horario.id).where(
+                        Horario.curso_id.in_(objetivos)
+                    )
+                ),
+            )
+            .order_by(Asistencia.estudiante_id, Asistencia.id)
+            .with_for_update(skip_locked=True)
+        )
+    )
+
+    if not registros:
+        return ResultadoSalidaProgramada(
+            fecha=fecha,
+            hora_salida=salida,
+            cursos=0,
+            curso_ids=[],
+            estudiantes=0,
+            salidas_registradas=0,
+            notificaciones_encoladas=0,
+        )
+
+    for registro in registros:
+        _validar_orden(registro, salida)
+
+    por_estudiante: dict[int, list[Asistencia]] = {}
+    for registro in registros:
+        por_estudiante.setdefault(registro.estudiante_id, []).append(registro)
+
+    notificaciones = 0
+    for registros_estudiante in por_estudiante.values():
+        for registro in registros_estudiante:
+            registro.hora_salida = salida
+        if _encolar_notificacion(
+            db,
+            asistencia=registros_estudiante[0],
+            salida=salida,
+            motivo=motivo,
+        ):
+            notificaciones += 1
+
+    cursos_afectados = sorted(
+        {
+            registro.horario.curso_id
+            for registro in registros
+            if registro.horario is not None
+        }
+    )
+
+    audit.registrar(
+        db,
+        usuario_id=profesor_id,
+        accion="REGISTRAR_SALIDA_PROGRAMADA",
+        entidad="colegio" if todos else "curso",
+        entidad_id=curso_id if not todos and curso_id is not None else None,
+        detalle={
+            "fecha": fecha.isoformat(),
+            "hora_salida": salida.isoformat(),
+            "motivo": motivo,
+            "todos": todos,
+            "curso_ids": cursos_afectados,
+            "estudiantes": len(por_estudiante),
+            "salidas_registradas": len(registros),
+            "notificaciones": notificaciones,
+        },
+        ip=ip,
+    )
+    db.commit()
+    return ResultadoSalidaProgramada(
+        fecha=fecha,
+        hora_salida=salida,
+        cursos=len(cursos_afectados),
+        curso_ids=cursos_afectados,
         estudiantes=len(por_estudiante),
         salidas_registradas=len(registros),
         notificaciones_encoladas=notificaciones,

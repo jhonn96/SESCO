@@ -33,6 +33,7 @@ from app.schemas.asistencia import (
     SalidaMasivaRequest,
     SalidaMasivaResponse,
     SalidaProgramadaRequest,
+    SalidaProgramadaResponse,
 )
 from app.schemas.enums import EstadoAsistencia, RolNombre
 from app.services import asistencia_service, jornada_service, salida_service
@@ -230,18 +231,19 @@ def registrar_salida_masiva(
 
 @router.post(
     "/salida-programada",
-    response_model=SalidaMasivaResponse,
+    response_model=SalidaProgramadaResponse,
     status_code=status.HTTP_200_OK,
-    summary="Registrar una salida especial de un curso (solo Director)",
+    summary="Registrar una salida especial masiva (solo Director)",
     description=(
-        "Registra la salida de todos los estudiantes del curso con ingreso de "
-        "hoy y sin salida, usando la hora indicada (no puede ser futura). El "
-        "motivo se incluye en el aviso que reciben los tutores y en la "
-        "bitácora."
+        "Registra la salida de los estudiantes con ingreso de hoy y sin "
+        "salida. El alcance puede ser un curso (``curso_id``), una selección "
+        "múltiple (``curso_ids``) o todo el colegio (``todos=true``). La hora "
+        "indicada no puede ser futura y el motivo se incluye en el aviso que "
+        "reciben los tutores y en la bitácora."
     ),
     responses={
-        404: {"description": "El curso no existe"},
-        422: {"description": "Hora inválida o anterior a algún ingreso"},
+        404: {"description": "Algún curso no existe"},
+        422: {"description": "Hora inválida, anterior a un ingreso o alcance vacío"},
     },
 )
 def registrar_salida_programada(
@@ -249,16 +251,18 @@ def registrar_salida_programada(
     db: DbSession,
     director: CurrentDirector,
     request: Request,
-) -> SalidaMasivaResponse:
-    resultado = salida_service.registrar_salida_masiva(
+) -> SalidaProgramadaResponse:
+    resultado = salida_service.registrar_salida_programada(
         db,
         curso_id=datos.curso_id,
+        curso_ids=datos.curso_ids,
+        todos=datos.todos,
         hora_salida=datos.hora_salida,
         motivo=datos.motivo,
         profesor_id=director.id,
         ip=_ip(request),
     )
-    return SalidaMasivaResponse.model_validate(resultado)
+    return SalidaProgramadaResponse.model_validate(resultado)
 
 
 @router.post(

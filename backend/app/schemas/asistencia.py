@@ -204,15 +204,76 @@ class SalidaMasivaRequest(APIModel):
     )
 
 
-class SalidaProgramadaRequest(SalidaMasivaRequest):
-    """Salida especial de un curso con el motivo que recibirán los tutores."""
+class SalidaProgramadaRequest(APIModel):
+    """Salida especial con el motivo que recibirán los tutores.
 
+    El alcance se indica de una sola forma:
+    - ``todos=true``: todos los cursos del colegio.
+    - ``curso_ids``: una selección múltiple de cursos.
+    - ``curso_id``: un único curso (compatibilidad con el flujo anterior).
+    """
+
+    curso_id: int | None = Field(
+        default=None,
+        gt=0,
+        description="Curso único (compatibilidad con el flujo anterior)",
+    )
+    curso_ids: list[int] | None = Field(
+        default=None,
+        min_length=1,
+        description="Cursos seleccionados para la salida masiva",
+    )
+    todos: bool = Field(
+        default=False,
+        description="Si es true, aplica a todos los cursos del colegio",
+    )
+    hora_salida: time | None = Field(
+        default=None,
+        description=(
+            "Hora de salida (HH:MM o HH:MM:SS). Si se omite, se usa la hora "
+            "actual del colegio."
+        ),
+        examples=["14:35"],
+    )
     motivo: str = Field(
         min_length=3,
         max_length=200,
-        description="Motivo de la salida especial (viaje, actividad, cita, etc.)",
-        examples=["Salida anticipada por actividad extracurricular"],
+        description="Motivo de la salida especial (simulacro, feriado, etc.)",
+        examples=["Simulacro de evacuación"],
     )
+
+    @model_validator(mode="after")
+    def validar_alcance(self) -> "SalidaProgramadaRequest":
+        if self.todos:
+            if self.curso_id is not None or self.curso_ids:
+                raise ValueError(
+                    "Usa 'todos' o una selección de cursos, no ambos."
+                )
+            return self
+
+        if self.curso_ids is not None:
+            if self.curso_id is not None:
+                raise ValueError(
+                    "Indica 'curso_id' o 'curso_ids', no ambos."
+                )
+            if any(curso_id <= 0 for curso_id in self.curso_ids):
+                raise ValueError("Los IDs de curso deben ser positivos.")
+            return self
+
+        if self.curso_id is None:
+            raise ValueError(
+                "Indica 'curso_id', 'curso_ids' o 'todos=true'."
+            )
+        return self
+
+    @property
+    def cursos_objetivo(self) -> list[int] | None:
+        """IDs de curso solicitados; ``None`` significa todos."""
+        if self.todos:
+            return None
+        if self.curso_ids is not None:
+            return sorted(set(self.curso_ids))
+        return [self.curso_id] if self.curso_id is not None else []
 
 
 class SalidaMasivaResponse(APIModel):
@@ -221,6 +282,27 @@ class SalidaMasivaResponse(APIModel):
     curso_id: int
     fecha: date
     hora_salida: datetime
+    estudiantes: int = Field(
+        ge=0, description="Estudiantes a los que se les registró la salida"
+    )
+    salidas_registradas: int = Field(
+        ge=0, description="Registros de asistencia actualizados"
+    )
+    notificaciones_encoladas: int = Field(ge=0)
+
+
+class SalidaProgramadaResponse(APIModel):
+    """Resultado de una salida programada de uno o varios cursos."""
+
+    fecha: date
+    hora_salida: datetime
+    cursos: int = Field(
+        ge=0, description="Cursos con estudiantes a los que se registró la salida"
+    )
+    curso_ids: list[int] = Field(
+        default_factory=list,
+        description="IDs de los cursos efectivamente actualizados",
+    )
     estudiantes: int = Field(
         ge=0, description="Estudiantes a los que se les registró la salida"
     )

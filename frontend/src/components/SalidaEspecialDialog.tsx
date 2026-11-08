@@ -44,7 +44,11 @@ export function SalidaEspecialDialog({
   const registrar = useMutation({
     mutationFn: (datos: { hora: string; motivo: string }) => {
       if (!curso) throw new Error('Selecciona un curso antes de continuar.')
-      return programarSalida(curso.id, datos.hora, datos.motivo)
+      return programarSalida({
+        cursoId: curso.id,
+        horaSalida: datos.hora,
+        motivo: datos.motivo,
+      })
     },
     onSuccess: (resultado) => {
       if (resultado.estudiantes === 0) {
