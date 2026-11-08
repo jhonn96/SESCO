@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # --- Tareas programadas ---
     cierre_jornada_automatico: bool = True
     cierre_jornada_intervalo_min: int = Field(default=15, ge=1)
+    # Generación diaria de alertas (incluye cursos sin registro) tras esta hora.
+    alertas_cierre_automatico: bool = True
+    alertas_cierre_hora: int = Field(default=19, ge=0, le=23)
 
     @property
     def database_url(self) -> str:

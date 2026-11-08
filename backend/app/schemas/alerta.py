@@ -14,7 +14,8 @@ from app.schemas.estudiante import EstudianteResumen, TutorACargoResponse
 
 class AlertaResponse(APIModel):
     id: int
-    estudiante_id: int
+    estudiante_id: int | None = None
+    curso_id: int | None = None
     tipo: TipoAlerta
     detalle: str | None = None
     generada_en: datetime
@@ -24,6 +25,10 @@ class AlertaResponse(APIModel):
     atendida_en: datetime | None = None
     estudiante: EstudianteResumen | None = Field(
         default=None, description="Se incluye cuando la relación está cargada"
+    )
+    curso: CursoResponse | None = Field(
+        default=None,
+        description="Curso afectado; se usa en las alertas de tipo curso_sin_registro",
     )
 
 
@@ -42,6 +47,10 @@ class GeneracionAlertasResponse(APIModel):
     alertas_creadas: int
     alertas: list[AlertaResponse]
     cursos_evaluados: int
+    cursos_sin_registro: list[str] = Field(
+        default_factory=list,
+        description="Cursos que no tuvieron ningún registro de asistencia en el día",
+    )
     reportes: list[ReporteInasistenciaResponse]
     notificaciones_creadas: int
     semana_inicio: date

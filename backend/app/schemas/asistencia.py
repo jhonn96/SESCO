@@ -204,6 +204,17 @@ class SalidaMasivaRequest(APIModel):
     )
 
 
+class SalidaProgramadaRequest(SalidaMasivaRequest):
+    """Salida especial de un curso con el motivo que recibirán los tutores."""
+
+    motivo: str = Field(
+        min_length=3,
+        max_length=200,
+        description="Motivo de la salida especial (viaje, actividad, cita, etc.)",
+        examples=["Salida anticipada por actividad extracurricular"],
+    )
+
+
 class SalidaMasivaResponse(APIModel):
     """Resultado de registrar la salida de un curso completo."""
 

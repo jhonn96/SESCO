@@ -104,6 +104,11 @@ const MENU_POR_ROL: Record<RolNombre, GrupoMenu[]> = {
           icono: Megaphone,
           ruta: '/director/comunicados',
         },
+        {
+          titulo: 'Control de Jornada',
+          icono: CalendarClock,
+          ruta: '/director/control-jornada',
+        },
       ],
     },
     {

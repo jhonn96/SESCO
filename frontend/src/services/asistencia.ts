@@ -164,6 +164,23 @@ export function registrarSalidaMasiva(
   })
 }
 
+/**
+ * POST /api/asistencia/salida-programada (solo Director): registra una salida
+ * especial del curso y envía el motivo a los tutores. La hora no puede ser
+ * posterior a la actual.
+ */
+export function programarSalida(
+  cursoId: number,
+  horaSalida: string | undefined,
+  motivo: string,
+): Promise<SalidaMasivaResultado> {
+  return api.post<SalidaMasivaResultado>('/asistencia/salida-programada', {
+    curso_id: cursoId,
+    hora_salida: horaSalida,
+    motivo,
+  })
+}
+
 /** Código TOTP vigente del estudiante autenticado. */
 export interface CodigoQrEstudiante {
   estudiante_id: number

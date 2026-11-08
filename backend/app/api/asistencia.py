@@ -32,6 +32,7 @@ from app.schemas.asistencia import (
     SalidaManualRequest,
     SalidaMasivaRequest,
     SalidaMasivaResponse,
+    SalidaProgramadaRequest,
 )
 from app.schemas.enums import EstadoAsistencia, RolNombre
 from app.services import asistencia_service, jornada_service, salida_service
@@ -222,6 +223,39 @@ def registrar_salida_masiva(
         hora_salida=datos.hora_salida,
         profesor_id=usuario.id,
         es_profesor=usuario.rol.nombre == RolNombre.PROFESOR.value,
+        ip=_ip(request),
+    )
+    return SalidaMasivaResponse.model_validate(resultado)
+
+
+@router.post(
+    "/salida-programada",
+    response_model=SalidaMasivaResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Registrar una salida especial de un curso (solo Director)",
+    description=(
+        "Registra la salida de todos los estudiantes del curso con ingreso de "
+        "hoy y sin salida, usando la hora indicada (no puede ser futura). El "
+        "motivo se incluye en el aviso que reciben los tutores y en la "
+        "bitácora."
+    ),
+    responses={
+        404: {"description": "El curso no existe"},
+        422: {"description": "Hora inválida o anterior a algún ingreso"},
+    },
+)
+def registrar_salida_programada(
+    datos: SalidaProgramadaRequest,
+    db: DbSession,
+    director: CurrentDirector,
+    request: Request,
+) -> SalidaMasivaResponse:
+    resultado = salida_service.registrar_salida_masiva(
+        db,
+        curso_id=datos.curso_id,
+        hora_salida=datos.hora_salida,
+        motivo=datos.motivo,
+        profesor_id=director.id,
         ip=_ip(request),
     )
     return SalidaMasivaResponse.model_validate(resultado)

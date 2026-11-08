@@ -1,7 +1,11 @@
 import { api, type PeticionPaginada } from './api'
 import type { Curso } from './cursos'
 
-export type TipoAlerta = 'faltas' | 'tardanzas' | 'inasistencia'
+export type TipoAlerta =
+  | 'faltas'
+  | 'tardanzas'
+  | 'inasistencia'
+  | 'curso_sin_registro'
 
 export interface AlertaEstudiante {
   usuario_id: number
@@ -11,7 +15,8 @@ export interface AlertaEstudiante {
 /** Alerta automática de asistencia (RF-06/RF-07). */
 export interface Alerta {
   id: number
-  estudiante_id: number
+  estudiante_id: number | null
+  curso_id: number | null
   tipo: TipoAlerta
   detalle: string | null
   generada_en: string
@@ -20,11 +25,15 @@ export interface Alerta {
   atendida_por: number | null
   atendida_en: string | null
   estudiante: AlertaEstudiante | null
+  curso: Curso | null
 }
 
 export interface FiltrosAlertas {
   tipo?: TipoAlerta
   atendida?: boolean
+  estudianteId?: number
+  desde?: string
+  hasta?: string
   skip?: number
   limit?: number
 }
@@ -38,6 +47,9 @@ export function listarAlertas(
     query: {
       tipo: filtros.tipo,
       atendida: filtros.atendida,
+      estudiante_id: filtros.estudianteId,
+      desde: filtros.desde,
+      hasta: filtros.hasta,
       skip: filtros.skip ?? 0,
       limit: filtros.limit ?? 10,
     },

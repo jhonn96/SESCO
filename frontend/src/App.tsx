@@ -8,6 +8,7 @@ import { Asistencia } from '@/pages/Asistencia'
 import { Auditoria } from '@/pages/Auditoria'
 import { Comunicados } from '@/pages/Comunicados'
 import { Configuracion } from '@/pages/Configuracion'
+import { ControlJornada } from '@/pages/ControlJornada'
 import { Cursos } from '@/pages/Cursos'
 import { Dashboard } from '@/pages/Dashboard'
 import { DirectorDashboard } from '@/pages/DirectorDashboard'
@@ -56,6 +57,10 @@ export default function App() {
         <Route path="/director/cursos" element={<Cursos />} />
         <Route path="/director/horarios" element={<Horarios />} />
         <Route path="/director/comunicados" element={<Comunicados />} />
+        <Route
+          path="/director/control-jornada"
+          element={<ControlJornada />}
+        />
         <Route
           path="/director/justificaciones"
           element={<Justificaciones />}

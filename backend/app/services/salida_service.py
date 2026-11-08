@@ -229,11 +229,16 @@ def registrar_salida_masiva(
     *,
     curso_id: int,
     hora_salida: time | None = None,
+    motivo: str | None = None,
     profesor_id: int | None = None,
     es_profesor: bool = False,
     ip: str | None = None,
 ) -> ResultadoSalidaMasiva:
-    """Registra la misma hora de salida para todos los presentes del curso."""
+    """Registra la misma hora de salida para todos los presentes del curso.
+
+    ``motivo`` se usa cuando la salida es especial (salida programada) y se
+    incluye en el aviso que reciben los tutores.
+    """
     ahora = qr_service.ahora_local()
     fecha = ahora.date()
 
@@ -293,7 +298,7 @@ def registrar_salida_masiva(
             db,
             asistencia=registros_estudiante[0],
             salida=salida,
-            motivo="salida del curso",
+            motivo=motivo or "salida del curso",
         ):
             notificaciones += 1
 
@@ -306,6 +311,7 @@ def registrar_salida_masiva(
         detalle={
             "fecha": fecha.isoformat(),
             "hora_salida": salida.isoformat(),
+            "motivo": motivo or "salida del curso",
             "estudiantes": len(por_estudiante),
             "salidas_registradas": len(registros),
             "notificaciones": notificaciones,

@@ -10,12 +10,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import date
 
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.services import jornada_service
+from app.services import alerta_service, jornada_service, qr_service
 
 logger = logging.getLogger(__name__)
+
+#: Último día en que se generaron las alertas de cierre en este proceso.
+_ultimo_dia_alertas: date | None = None
 
 
 def ejecutar_cierre_jornada() -> jornada_service.ResultadoCierreJornada:
@@ -48,18 +52,72 @@ async def _bucle_cierre_jornada() -> None:
         await asyncio.sleep(intervalo)
 
 
+def ejecutar_alertas_cierre() -> alerta_service.ResultadoGeneracion:
+    """Genera las alertas del día una vez terminada la jornada escolar."""
+    db = SessionLocal()
+    try:
+        return alerta_service.generar(db)
+    finally:
+        db.close()
+
+
+async def _bucle_alertas_cierre() -> None:
+    global _ultimo_dia_alertas
+    intervalo = settings.cierre_jornada_intervalo_min * 60
+    while True:
+        try:
+            ahora = qr_service.ahora_local()
+            if (
+                ahora.weekday() < 5
+                and ahora.hour >= settings.alertas_cierre_hora
+                and _ultimo_dia_alertas != ahora.date()
+            ):
+                resultado = await asyncio.to_thread(ejecutar_alertas_cierre)
+                _ultimo_dia_alertas = ahora.date()
+                logger.info(
+                    "Alertas de cierre %s: %s alerta(s), %s curso(s) sin registro",
+                    ahora.date(),
+                    len(resultado.alertas),
+                    len(resultado.cursos_sin_registro),
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Error al generar las alertas de cierre del día")
+        await asyncio.sleep(intervalo)
+
+
 def iniciar() -> list[asyncio.Task[None]]:
     """Arranca las tareas programadas; devuelve las tareas para poder pararlas."""
-    if not settings.cierre_jornada_automatico:
-        logger.info("Cierre automático de jornada deshabilitado")
-        return []
+    tareas: list[asyncio.Task[None]] = []
 
-    tarea = asyncio.create_task(_bucle_cierre_jornada(), name="cierre-jornada")
-    logger.info(
-        "Cierre automático de jornada activo cada %s min",
-        settings.cierre_jornada_intervalo_min,
-    )
-    return [tarea]
+    if settings.cierre_jornada_automatico:
+        tareas.append(
+            asyncio.create_task(
+                _bucle_cierre_jornada(), name="cierre-jornada"
+            )
+        )
+        logger.info(
+            "Cierre automático de jornada activo cada %s min",
+            settings.cierre_jornada_intervalo_min,
+        )
+    else:
+        logger.info("Cierre automático de jornada deshabilitado")
+
+    if settings.alertas_cierre_automatico:
+        tareas.append(
+            asyncio.create_task(
+                _bucle_alertas_cierre(), name="alertas-cierre"
+            )
+        )
+        logger.info(
+            "Alertas de cierre activas a partir de las %s:00",
+            settings.alertas_cierre_hora,
+        )
+    else:
+        logger.info("Alertas automáticas de cierre deshabilitadas")
+
+    return tareas
 
 
 async def detener(tareas: list[asyncio.Task[None]]) -> None:

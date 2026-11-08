@@ -8,6 +8,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import {
   BellRing,
+  CalendarX2,
   CheckCheck,
   Clock3,
   GraduationCap,
@@ -44,7 +45,12 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useDirectorioEstudiantes } from '@/hooks/use-directorio-estudiantes'
-import { etiquetaCortaCurso, nombreNivel, nombreTurno } from '@/lib/cursos'
+import {
+  etiquetaCortaCurso,
+  etiquetaCurso,
+  nombreNivel,
+  nombreTurno,
+} from '@/lib/cursos'
 import { datosEstudiante } from '@/lib/directorio'
 import { mensajeDeError } from '@/lib/errores'
 import { formatearFechaCorta, formatearFechaHora } from '@/lib/fechas'
@@ -68,7 +74,7 @@ type VistaAlertas = 'alertas' | 'ranking'
 interface EstiloTipo {
   etiqueta: string
   icono: LucideIcon
-  variante: 'destructive' | 'warning' | 'info'
+  variante: 'destructive' | 'warning' | 'info' | 'calendario'
 }
 
 const ESTILOS_TIPO: Record<TipoAlerta, EstiloTipo> = {
@@ -87,6 +93,11 @@ const ESTILOS_TIPO: Record<TipoAlerta, EstiloTipo> = {
     icono: TrendingDown,
     variante: 'info',
   },
+  curso_sin_registro: {
+    etiqueta: 'Curso sin registro',
+    icono: CalendarX2,
+    variante: 'calendario',
+  },
 }
 
 const TIPOS: { valor: FiltroTipo; etiqueta: string }[] = [
@@ -94,6 +105,7 @@ const TIPOS: { valor: FiltroTipo; etiqueta: string }[] = [
   { valor: 'faltas', etiqueta: 'Faltas' },
   { valor: 'tardanzas', etiqueta: 'Tardanzas' },
   { valor: 'inasistencia', etiqueta: 'Inasistencia' },
+  { valor: 'curso_sin_registro', etiqueta: 'Curso sin registro' },
 ]
 
 const ESTADOS: { valor: FiltroEstado; etiqueta: string }[] = [
@@ -135,8 +147,13 @@ export function Alertas() {
   const atender = useMutation({
     mutationFn: atenderAlerta,
     onSuccess: (alerta) => {
+      const sujeto = alerta.curso
+        ? etiquetaCurso(alerta.curso)
+        : alerta.estudiante_id
+          ? `Estudiante #${alerta.estudiante_id}`
+          : 'Alerta'
       toast.success('Alerta marcada como atendida', {
-        description: `${ESTILOS_TIPO[alerta.tipo].etiqueta} · Estudiante #${alerta.estudiante_id}`,
+        description: `${ESTILOS_TIPO[alerta.tipo].etiqueta} · ${sujeto}`,
       })
       queryClient.invalidateQueries({ queryKey: ['alertas'] })
       if (alertas.length === 1 && pagina > 0) setPagina(pagina - 1)
@@ -167,7 +184,7 @@ export function Alertas() {
     <DashboardShell seccion="Alertas">
       <PageHeader
         titulo="Alertas de asistencia"
-        descripcion="Faltas consecutivas, tardanzas reiteradas e inasistencia por curso detectadas automáticamente. Marca cada alerta cuando ya hayas tomado acción."
+        descripcion="Faltas consecutivas, tardanzas reiteradas, inasistencia por curso y cursos sin registro diario detectados automáticamente. Marca cada alerta cuando ya hayas tomado acción."
         icono={BellRing}
         acciones={
           <>
@@ -268,7 +285,7 @@ export function Alertas() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
-              <TableHead className="px-4">Estudiante</TableHead>
+              <TableHead className="px-4">Estudiante / Curso</TableHead>
               <TableHead>Curso</TableHead>
               <TableHead>Tipo</TableHead>
               <TableHead className="min-w-56">Detalle</TableHead>
@@ -285,45 +302,64 @@ export function Alertas() {
               onReintentar={() => void consulta.refetch()}
               vacio={sinDatos}
               tituloVacio={tituloVacio}
-              descripcionVacio="Las alertas se generan automáticamente a partir de las faltas, tardanzas e inasistencias registradas."
+              descripcionVacio="Las alertas se generan automáticamente a partir de las faltas, tardanzas, inasistencias y cursos sin registro del día."
               iconoVacio={BellRing}
             />
 
             {alertas.map((alerta) => {
               const estilo = ESTILOS_TIPO[alerta.tipo]
               const IconoTipo = estilo.icono
-              const estudiante = datosEstudiante(
-                directorio.data,
-                alerta.estudiante_id,
-              )
+              const esCurso = alerta.tipo === 'curso_sin_registro'
+              const estudiante =
+                alerta.estudiante_id === null
+                  ? null
+                  : datosEstudiante(directorio.data, alerta.estudiante_id)
+              const curso = alerta.curso ?? estudiante?.curso ?? null
               const atendiendo =
                 atender.isPending && atender.variables === alerta.id
 
               return (
                 <TableRow key={alerta.id}>
                   <TableCell className="px-4">
-                    <div className="flex items-center gap-3">
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                        {estudiante.iniciales}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{estudiante.nombre}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {estudiante.ci ? `CI ${estudiante.ci}` : 'Sin datos del usuario'}
-                        </p>
+                    {esCurso ? (
+                      <div className="flex items-center gap-3">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-violet-700 dark:text-violet-300">
+                          <CalendarX2 className="size-4" aria-hidden="true" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">Curso completo</p>
+                          <p className="text-xs text-muted-foreground">
+                            Sin registros de asistencia
+                          </p>
+                        </div>
                       </div>
-                    </div>
+                    ) : estudiante ? (
+                      <div className="flex items-center gap-3">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                          {estudiante.iniciales}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">
+                            {estudiante.nombre}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {estudiante.ci
+                              ? `CI ${estudiante.ci}`
+                              : 'Sin datos del usuario'}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
 
                   <TableCell>
-                    {estudiante.curso ? (
+                    {curso ? (
                       <>
-                        <p className="font-medium">
-                          {etiquetaCortaCurso(estudiante.curso)}
-                        </p>
+                        <p className="font-medium">{etiquetaCortaCurso(curso)}</p>
                         <p className="text-xs text-muted-foreground">
-                          {nombreNivel(estudiante.curso.nivel)} ·{' '}
-                          {nombreTurno(estudiante.curso.turno)}
+                          {nombreNivel(curso.nivel)} · {nombreTurno(curso.turno)}
                         </p>
                       </>
                     ) : (

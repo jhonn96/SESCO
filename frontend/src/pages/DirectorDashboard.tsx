@@ -3,13 +3,16 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import type { LucideIcon } from 'lucide-react'
 import {
   AlertTriangle,
+  CalendarClock,
   CalendarDays,
+  CalendarX2,
   CheckCircle2,
   Clock,
   RefreshCw,
   Users,
   XCircle,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { DashboardShell } from '@/components/DashboardShell'
@@ -27,6 +30,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
+import { etiquetaCurso } from '@/lib/cursos'
 import {
   diaCorto,
   formatearFechaCorta,
@@ -37,6 +41,7 @@ import {
 import { etiquetaPeriodo } from '@/lib/periodos'
 import { ETIQUETA_ROL, nombreRol } from '@/lib/roles'
 import { cn } from '@/lib/utils'
+import { listarAlertas } from '@/services/alertas'
 import { listarPeriodos } from '@/services/periodos'
 import { obtenerPanel, type PanelAsistencia } from '@/services/reportes'
 
@@ -252,6 +257,24 @@ export function DirectorDashboard() {
     retry: 1,
   })
 
+  const alertasCursos = useQuery({
+    queryKey: ['alertas', 'cursos-sin-registro', hoy],
+    queryFn: ({ signal }) =>
+      listarAlertas(
+        {
+          tipo: 'curso_sin_registro',
+          atendida: false,
+          desde: hoy,
+          hasta: hoy,
+          limit: 200,
+        },
+        signal,
+      ),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    retry: 1,
+  })
+
   useEffect(() => {
     if (!isError) return
 
@@ -284,6 +307,19 @@ export function DirectorDashboard() {
   const sinRegistros = data !== undefined && data.totales_hoy.registros === 0
   const cursosSobreUmbral =
     data?.cursos.filter((curso) => curso.supera_umbral).length ?? 0
+
+  const cursosSinRegistro = useMemo(() => {
+    const etiquetas = (alertasCursos.data?.data ?? []).map((alerta) =>
+      alerta.curso
+        ? etiquetaCurso(alerta.curso)
+        : alerta.curso_id
+          ? `Curso #${alerta.curso_id}`
+          : 'Curso sin identificar',
+    )
+    return [...new Set(etiquetas)]
+  }, [alertasCursos.data])
+
+  const cursosSinRegistroCargados = alertasCursos.isSuccess
 
   function cambiarFecha(valor: string) {
     if (valor) setFecha(valor)
@@ -363,6 +399,12 @@ export function DirectorDashboard() {
                 >
                   Hoy
                 </Button>
+                <Button asChild className="h-10">
+                  <Link to="/director/control-jornada">
+                    <CalendarClock aria-hidden="true" />
+                    Programar Salida
+                  </Link>
+                </Button>
                 <Button
                   type="button"
                   variant="outline"
@@ -392,6 +434,55 @@ export function DirectorDashboard() {
           </Card>
         </div>
       </section>
+
+      {cursosSinRegistroCargados ? (
+        cursosSinRegistro.length > 0 ? (
+          <Card
+            className="border-destructive/40 bg-destructive/5 [--card-spacing:--spacing(6)]"
+            role="alert"
+          >
+            <CardContent className="flex flex-wrap items-center gap-4">
+              <span className="flex size-12 shrink-0 items-center justify-center rounded-xl border border-destructive/20 bg-destructive/10 text-destructive">
+                <CalendarX2 className="size-6" aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1 space-y-2">
+                <p className="text-lg font-semibold">
+                  Los siguientes cursos no tienen registro de asistencia hoy:
+                </p>
+                <ul className="flex flex-wrap gap-2">
+                  {cursosSinRegistro.map((curso) => (
+                    <li
+                      key={curso}
+                      className="rounded-full border border-destructive/30 bg-destructive/10 px-3 py-1 text-sm font-medium text-destructive"
+                    >
+                      {curso}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <Button asChild variant="outline" className="h-10">
+                <Link to="/director/alertas">Ver alertas</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-success/30 bg-success/5 [--card-spacing:--spacing(6)]">
+            <CardContent className="flex flex-wrap items-center gap-4">
+              <span className="flex size-12 shrink-0 items-center justify-center rounded-xl border border-success/20 bg-success/10 text-success">
+                <CheckCircle2 className="size-6" aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="text-lg font-semibold">
+                  Todos los cursos registraron asistencia hoy
+                </p>
+                <p className="text-base text-muted-foreground">
+                  No hay alertas de cursos sin registro para esta fecha.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )
+      ) : null}
 
       <section
         aria-labelledby="kpis-titulo"

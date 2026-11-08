@@ -18,6 +18,8 @@ const badgeVariants = cva(
         warning:
           "border-amber-500/30 bg-amber-500/15 text-amber-700 dark:border-amber-400/40 dark:bg-amber-400/15 dark:text-amber-300",
         info: "border-primary/25 bg-primary/10 text-primary dark:border-primary/40 dark:bg-primary/15",
+        calendario:
+          "border-violet-500/30 bg-violet-500/15 text-violet-700 dark:border-violet-400/40 dark:bg-violet-400/15 dark:text-violet-300",
         muted:
           "border-border bg-muted/60 text-muted-foreground dark:bg-muted/40",
       },

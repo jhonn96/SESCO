@@ -36,10 +36,11 @@ def _ip(request: Request) -> str | None:
     summary="Generar alertas y reportes pendientes (solo Director)",
     description=(
         "Revisa las asistencias y crea: (1) alertas por 3 días consecutivos "
-        "con faltas o 5 tardanzas en el mes, y (2) reportes de curso "
-        "cuando la inasistencia semanal supera el umbral configurado. "
-        "Es idempotente: repetir la llamada el mismo día no duplica avisos. "
-        "Puede programarse como tarea diaria."
+        "con faltas o 5 tardanzas en el mes; (2) alertas de tipo "
+        "``curso_sin_registro`` para los cursos que no registraron asistencia "
+        "en el día; y (3) reportes de curso cuando la inasistencia semanal "
+        "supera el umbral configurado. Es idempotente: repetir la llamada el "
+        "mismo día no duplica avisos. Puede programarse como tarea diaria."
     ),
 )
 def generar_alertas(
@@ -67,6 +68,7 @@ def generar_alertas(
         alertas_creadas=len(resultado.alertas),
         alertas=[AlertaResponse.model_validate(a) for a in resultado.alertas],
         cursos_evaluados=resultado.cursos_evaluados,
+        cursos_sin_registro=resultado.cursos_sin_registro,
         reportes=resultado.reportes,
         notificaciones_creadas=resultado.notificaciones_creadas,
         semana_inicio=resultado.semana_inicio,

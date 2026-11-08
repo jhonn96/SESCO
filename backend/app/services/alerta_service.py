@@ -11,6 +11,9 @@ Reglas implementadas
 - **Reporte de curso**: si el porcentaje de inasistencia de la semana en curso
   supera ``umbral_inasistencia_pct`` (15 %), se encola una notificación
   ``inasistencia`` a cada Director activo.
+- **Curso sin registro**: en días hábiles, si un curso con clase programada no
+  tiene ninguna asistencia registrada, se crea una alerta
+  ``curso_sin_registro`` y se notifica a cada Director activo.
 - **Idempotencia**: las alertas se deduplican por ``(estudiante, tipo, día)`` y
   los reportes por el prefijo ``Curso + Semana`` del mensaje. Ejecutar la
   generación dos veces el mismo día no crea duplicados.
@@ -35,8 +38,10 @@ from app.models import (
     Asistencia,
     Curso,
     Estudiante,
+    Horario,
     Notificacion,
     ParametroAsistencia,
+    Periodo,
     ProfesorCurso,
     Tutor,
     Tutoria,
@@ -72,12 +77,16 @@ MESES = (
 #: Días hacia atrás que se revisan para medir la racha de faltas.
 DIAS_RACHA = 120
 
+#: Días de la grilla en el orden de ``datetime.weekday()`` (lunes = 0).
+DIAS_HABILES = ("lunes", "martes", "miercoles", "jueves", "viernes")
+
 
 @dataclass
 class ResultadoGeneracion:
     alertas: list[Alerta] = field(default_factory=list)
     reportes: list[ReporteInasistenciaResponse] = field(default_factory=list)
     cursos_evaluados: int = 0
+    cursos_sin_registro: list[str] = field(default_factory=list)
     notificaciones_creadas: int = 0
     semana_inicio: date | None = None
     semana_fin: date | None = None
@@ -581,6 +590,130 @@ def _generar_reportes_curso(
 
 
 # --------------------------------------------------------------------------
+# Cursos sin registro de asistencia (RF-07)
+# --------------------------------------------------------------------------
+
+
+def _cursos_sin_registro(
+    db: Session, *, dia: date, periodo_id: int | None
+) -> list[Curso]:
+    """Cursos con clase programada que no registraron asistencia en ``dia``.
+
+    Solo se consideran cursos del periodo indicado o, si no se indica uno, de
+    los periodos lectivos vigentes en la fecha. También se exige que el curso
+    tenga al menos un bloque de horario ese día para no marcar cursos que no
+    tenían clase.
+    """
+    if periodo_id is not None:
+        filtros = [Curso.periodo_id == periodo_id]
+    else:
+        periodos_vigentes = select(Periodo.id).where(
+            Periodo.fecha_ini <= dia,
+            Periodo.fecha_fin >= dia,
+        )
+        filtros = [Curso.periodo_id.in_(periodos_vigentes)]
+
+    con_registro = (
+        select(Horario.curso_id)
+        .join(Asistencia, Asistencia.horario_id == Horario.id)
+        .where(Asistencia.fecha == dia)
+        .distinct()
+    )
+    con_clase = (
+        select(Horario.curso_id)
+        .where(Horario.dia_semana == DIAS_HABILES[dia.weekday()])
+        .distinct()
+    )
+    return list(
+        db.scalars(
+            select(Curso)
+            .where(
+                *filtros,
+                Curso.id.in_(con_clase),
+                ~Curso.id.in_(con_registro),
+            )
+            .order_by(Curso.nivel, Curso.grado, Curso.paralelo)
+        )
+    )
+
+
+def _alertas_curso_existentes(db: Session, *, dia: date) -> set[int]:
+    filas = db.scalars(
+        select(Alerta.curso_id).where(
+            Alerta.tipo == TipoAlerta.CURSO_SIN_REGISTRO.value,
+            Alerta.dia == dia,
+            Alerta.curso_id.is_not(None),
+        )
+    )
+    return {curso_id for curso_id in filas if curso_id is not None}
+
+
+def _generar_alertas_cursos_sin_registro(
+    db: Session,
+    *,
+    dia: date,
+    periodo_id: int | None,
+    directores: list[int],
+) -> tuple[list[Alerta], int, list[str]]:
+    """Crea una alerta y una notificación por cada curso sin asistencia.
+
+    Solo se evalúa de lunes a viernes: en fin de semana no hay jornada escolar
+    y todos los cursos aparecerían sin registro. La deduplicación es por
+    ``(tipo, curso, día)``.
+    """
+    if dia.weekday() >= 5:
+        return [], 0, []
+
+    cursos = _cursos_sin_registro(db, dia=dia, periodo_id=periodo_id)
+    if not cursos:
+        return [], 0, []
+
+    existentes = _alertas_curso_existentes(db, dia=dia)
+    nuevas: list[Alerta] = []
+    etiquetas: list[str] = []
+    notificaciones = 0
+    fecha_txt = dia.strftime("%d/%m/%Y")
+
+    for curso in cursos:
+        if curso.id in existentes:
+            continue
+        etiqueta = reporte_service.etiqueta_curso(curso)
+        detalle = (
+            f"El curso {etiqueta} no tiene ningún registro de asistencia "
+            f"el {fecha_txt}."
+        )
+        alerta = Alerta(
+            estudiante_id=None,
+            curso_id=curso.id,
+            tipo=TipoAlerta.CURSO_SIN_REGISTRO.value,
+            detalle=detalle,
+            dia=dia,
+            atendida=False,
+        )
+        db.add(alerta)
+        db.flush()
+
+        mensaje = f"Curso sin registro de asistencia: {etiqueta} ({fecha_txt})."
+        for director_id in sorted(set(directores)):
+            db.add(
+                Notificacion(
+                    usuario_id=director_id,
+                    alerta_id=alerta.id,
+                    tipo="alerta",
+                    canal="app",
+                    mensaje=mensaje,
+                    intentos=0,
+                )
+            )
+            notificaciones += 1
+
+        nuevas.append(alerta)
+        etiquetas.append(etiqueta)
+
+    return nuevas, notificaciones, etiquetas
+
+
+# --------------------------------------------------------------------------
 # Generación (endpoint / tarea programada)
 # --------------------------------------------------------------------------
 
@@ -599,12 +732,20 @@ def generar(
     umbral = float(parametros.umbral_inasistencia_pct)
     directores = _directores_activos(db)
 
-    alertas, notif_alertas = _generar_alertas_estudiante(
+    alertas_estudiante, notif_alertas = _generar_alertas_estudiante(
         db,
         hasta=hoy,
         periodo_id=periodo_id,
         parametros=parametros,
         directores=directores,
+    )
+    alertas_curso, notif_cursos, cursos_sin_registro = (
+        _generar_alertas_cursos_sin_registro(
+            db,
+            dia=hoy,
+            periodo_id=periodo_id,
+            directores=directores,
+        )
     )
     reportes, cursos_evaluados, notif_reportes = _generar_reportes_curso(
         db,
@@ -613,6 +754,9 @@ def generar(
         umbral=umbral,
         directores=directores,
     )
+
+    alertas = alertas_estudiante + alertas_curso
+    notificaciones = notif_alertas + notif_cursos + notif_reportes
 
     audit.registrar(
         db,
@@ -623,8 +767,9 @@ def generar(
             "fecha": hoy.isoformat(),
             "periodo_id": periodo_id,
             "alertas_creadas": len(alertas),
+            "cursos_sin_registro": cursos_sin_registro,
             "reportes": len(reportes),
-            "notificaciones_creadas": notif_alertas + notif_reportes,
+            "notificaciones_creadas": notificaciones,
         },
         ip=ip,
     )
@@ -638,7 +783,8 @@ def generar(
         alertas=alertas,
         reportes=reportes,
         cursos_evaluados=cursos_evaluados,
-        notificaciones_creadas=notif_alertas + notif_reportes,
+        cursos_sin_registro=cursos_sin_registro,
+        notificaciones_creadas=notificaciones,
         semana_inicio=inicio,
         semana_fin=fin,
         umbral_inasistencia_pct=umbral,
@@ -877,7 +1023,10 @@ def listar(
     items = list(
         db.scalars(
             select(Alerta)
-            .options(joinedload(Alerta.estudiante).joinedload(Estudiante.usuario))
+            .options(
+                joinedload(Alerta.estudiante).joinedload(Estudiante.usuario),
+                joinedload(Alerta.curso),
+            )
             .where(*condiciones)
             .order_by(Alerta.generada_en.desc(), Alerta.id.desc())
             .offset(skip)
@@ -890,7 +1039,10 @@ def listar(
 def _cargar(db: Session, alerta_id: int) -> Alerta:
     alerta = db.scalar(
         select(Alerta)
-        .options(joinedload(Alerta.estudiante).joinedload(Estudiante.usuario))
+        .options(
+            joinedload(Alerta.estudiante).joinedload(Estudiante.usuario),
+            joinedload(Alerta.curso),
+        )
         .where(Alerta.id == alerta_id)
     )
     if alerta is None:
@@ -919,7 +1071,11 @@ def atender(
         accion="ATENDER_ALERTA",
         entidad="alerta",
         entidad_id=alerta.id,
-        detalle={"estudiante_id": alerta.estudiante_id, "tipo": alerta.tipo},
+        detalle={
+            "estudiante_id": alerta.estudiante_id,
+            "curso_id": alerta.curso_id,
+            "tipo": alerta.tipo,
+        },
         ip=ip,
     )
     db.commit()

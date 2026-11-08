@@ -101,6 +101,7 @@ class TipoAlerta(str, Enum):
     FALTAS = "faltas"
     TARDANZAS = "tardanzas"
     INASISTENCIA = "inasistencia"
+    CURSO_SIN_REGISTRO = "curso_sin_registro"
 
 
 class EstadoJustificacion(str, Enum):
